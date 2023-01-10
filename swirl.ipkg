@@ -1,0 +1,13 @@
+package swirl
+
+authors = "Denis Buzdalov"
+license = "Apache-2.0"
+brief = "Streams of monadic actions"
+
+version = 0.1.0
+
+sourcedir = "src"
+
+-- depends =
+
+modules = Data.Swirl

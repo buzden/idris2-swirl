@@ -1,0 +1,8 @@
+[install]
+whitelist = [ "swirl-tests" ]
+
+[custom.all.swirl]
+type = "local"
+path = "."
+ipkg = "swirl.ipkg"
+test = "tests/tests.ipkg"
