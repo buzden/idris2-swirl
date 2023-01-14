@@ -2,12 +2,12 @@ package swirl
 
 authors = "Denis Buzdalov"
 license = "Apache-2.0"
-brief = "Streams of monadic actions"
+brief = "Swirl, streams of monadic actions"
 
 version = 0.1.0
 
 sourcedir = "src"
 
--- depends =
+depends = tailrec
 
 modules = Data.Swirl
