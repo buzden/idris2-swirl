@@ -8,6 +8,7 @@ version = 0.1.0
 
 sourcedir = "src"
 
-depends = tailrec
+depends = if-unsolved-implicit
+        , tailrec
 
 modules = Data.Swirl

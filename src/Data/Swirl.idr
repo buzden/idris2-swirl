@@ -3,6 +3,8 @@ module Data.Swirl
 import Control.MonadRec
 import Control.WellFounded
 
+import public Language.Implicits.IfUnsolved
+
 %default total
 
 export
@@ -75,11 +77,11 @@ emit : Functor m => m a -> Swirl m () a
 emit mx = Effect $ mx <&> \x => delay $ Yield x $ Done ()
 
 export
-done : a -> Swirl m a Void
+done : (0 _ : IfUnsolved o Void) => a -> Swirl m a o
 done = Done
 
 export
-finish : Functor m => m a -> Swirl m a Void
+finish : Functor m => (0 _ : IfUnsolved o Void) => m a -> Swirl m a o
 finish mx = Effect $ mx <&> \x => Done x
 
 --- Extension ---
@@ -90,36 +92,37 @@ finish mx = Effect $ mx <&> \x => Done x
 --- Internal foldings ---
 
 export
-foldResOutsBy : Functor m => (a -> b -> b) -> Swirl m b a -> Swirl m b Void
+foldResOutsBy : Functor m => (0 _ : IfUnsolved o Void) => (a -> b -> b) -> Swirl m b a -> Swirl m b o
 foldResOutsBy f $ Done x     = Done x
 foldResOutsBy f $ Yield x ys = assert_total foldResOutsBy f $ mapFst (f x) ys
 foldResOutsBy f $ Effect xs  = Effect $ xs <&> mapLazy (assert_total $ foldResOutsBy f)
 
 export
-foldResOuts : Semigroup a => Functor m => Swirl m a a -> Swirl m a Void
+foldResOuts : Semigroup a => Functor m => (0 _ : IfUnsolved o Void) => Swirl m a a -> Swirl m a o
 foldResOuts = foldResOutsBy (<+>)
 
 export
-foldOutsBy : Functor m => (a -> b -> b) -> b -> Swirl m () a -> Swirl m b Void
+foldOutsBy : Functor m => (0 _ : IfUnsolved o Void) => (a -> b -> b) -> b -> Swirl m () a -> Swirl m b o
 foldOutsBy f x = foldResOutsBy f . mapFst (const x)
 
 export
-foldOuts : Monoid a => Functor m => Swirl m () a -> Swirl m a Void
+foldOuts : Monoid a => Functor m => (0 _ : IfUnsolved o Void) => Swirl m () a -> Swirl m a o
 foldOuts = foldResOuts . mapFst (const neutral)
 
 export
-outputs : Functor m => Swirl m () a -> Swirl m (List a) Void
+outputs : Functor m => (0 _ : IfUnsolved o Void) => Swirl m () a -> Swirl m (List a) o
 outputs = foldOutsBy (::) []
 
 --- Adapters ---
 
 export
-emitRes : Functor m => Swirl m a Void -> Swirl m () a
-emitRes $ Done x    = Yield x $ Done ()
-emitRes $ Effect xs = Effect $ xs <&> mapLazy (assert_total emitRes)
+emitRes : Functor m => (0 _ : IfUnsolved o Void) => Swirl m a o -> Swirl m () a
+emitRes $ Done x     = Yield x $ Done ()
+emitRes $ Yield _ xs = emitRes xs
+emitRes $ Effect xs  = Effect $ xs <&> mapLazy (assert_total emitRes)
 
 export
-forgetOuts : Functor m => Swirl m r a -> Swirl m r Void
+forgetOuts : Functor m => (0 _ : IfUnsolved o Void) => Swirl m r a -> Swirl m r o
 forgetOuts $ Done x     = Done x
 forgetOuts $ Yield _ ys = forgetOuts ys
 forgetOuts $ Effect xs  = Effect $ xs <&> mapLazy (assert_total forgetOuts)
