@@ -136,7 +136,7 @@ forgetOuts $ Yield _ ys = forgetOuts ys
 forgetOuts $ Effect xs  = Effect $ xs <&> mapLazy (assert_total forgetOuts)
 
 export
-forgetRes : Functor m => Monoid r => (0 _ : IfUnsolved r ()) => Swirl m r a -> Swirl m r a
+forgetRes : Functor m => Monoid r => (0 _ : IfUnsolved r ()) => Swirl m r' a -> Swirl m r a
 forgetRes $ Done _     = Done neutral
 forgetRes $ Yield x ys = Yield x $ forgetRes ys
 forgetRes $ Effect xs  = Effect $ xs <&> mapLazy (assert_total forgetRes)
