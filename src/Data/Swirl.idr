@@ -239,6 +239,20 @@ wriggleOuts f d@(Done x)   = d
 wriggleOuts f $ Yield x ys = (f x ys >>= wriggleOuts f) @{ByResult}
 wriggleOuts f $ Effect xs  = Effect $ xs <&> mapLazy (wriggleOuts f)
 
+||| Allows to alter the whole rest of the stream with a decision function on output.
+||| Decision function is given the current output and the original continuation and
+||| returns a swirl which outputs new continuations, which being concatenated replace the orignal one.
+||| Later this function goes onto the new continuations.
+export covering
+wiggleOuts : Functor m =>
+             Monoid r =>
+             (0 _ : IfUnsolved r' ()) =>
+             ((curr : o) -> (cont : Swirl m r o) -> Swirl m r' (Swirl m r o)) ->
+             Swirl m r o -> Swirl m r o
+wiggleOuts f d@(Done x)   = d
+wiggleOuts f $ Yield x ys = join $ forgetRes $ map (wiggleOuts f) $ f x ys
+wiggleOuts f $ Effect xs  = Effect $ xs <&> mapLazy (wiggleOuts f)
+
 --- Eliminators ---
 
 namespace NoTailRec
