@@ -21,16 +21,18 @@ emitUntilEOF act file = let _ = Prelude.MonoidAlternative in fEOF file >>= \case
     Left err => done $ pure err
     Right x => pure x ++ emitUntilEOF act file
 
+-- stops on a file error
 export
-fileAsChars : HasIO io => (0 _ : IfUnsolved io IO) =>
+readAsChars : HasIO io => (0 _ : IfUnsolved io IO) =>
               Alternative f => (0 _ : IfUnsolved f SnocList) =>
               File ->
               Swirl io (f FileError) Char
-fileAsChars = emitUntilEOF fGetChar
+readAsChars = emitUntilEOF fGetChar
 
+-- stops on a file error
 export
-fileAsLines : HasIO io => (0 _ : IfUnsolved io IO) =>
+readAsLines : HasIO io => (0 _ : IfUnsolved io IO) =>
               Alternative f => (0 _ : IfUnsolved f SnocList) =>
               File ->
               Swirl io (f FileError) String
-fileAsLines = emitUntilEOF fGetLine
+readAsLines = emitUntilEOF fGetLine
