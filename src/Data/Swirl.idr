@@ -182,6 +182,10 @@ export
 Monoid r => Functor m => Monad (Swirl m r) where
   join = squashOuts
 
+export
+HasIO io => Monoid r => HasIO (Swirl io r) where
+  liftIO = emit . liftIO
+
 -- Implementations over the second type argument --
 
 namespace Functor
