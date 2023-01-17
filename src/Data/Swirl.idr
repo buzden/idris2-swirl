@@ -39,6 +39,19 @@ export
 (++) (Yield x xs) ys = Yield x $ xs ++ ys
 (++) (Effect xs)  ys = Effect $ xs <&> mapLazy (assert_total (++ ys))
 
+--- Interleaving ---
+
+export
+interleave : Applicative m => (resultComp : rl -> rr -> r) -> Swirl m rl o -> Swirl m rr o -> Swirl m r o
+interleave fr (Done x) ys = mapFst (fr x) ys
+interleave fr xs (Done y) = mapFst (`fr` y) xs
+interleave fr (Yield x xs)  (Yield y ys) = Yield x $ Yield y $ interleave fr xs ys
+interleave fr (Yield x xs)  (Effect ys)  = Yield x $ Effect $ ys <&> mapLazy (interleave fr xs)
+interleave fr e@(Effect xs) (Yield x ys) = Effect $ xs <&> mapLazy (\xs => interleave fr (assert_smaller e xs) ys)
+interleave fr e@(Effect xs) (Effect ys)  = Effect [| f xs ys |] where
+  %inline f : Lazy (Swirl m rl o) -> Lazy (Swirl m rr o) -> Lazy (Swirl m r o)
+  f x y = interleave fr (assert_smaller e x) y
+
 --- Filtration ---
 
 export
@@ -129,6 +142,8 @@ squashRes $ Effect xs  = Effect $ xs <&> mapLazy (assert_total squashRes)
 
 --- Functor, Applicative, Monad ---
 
+-- Implementations over the last type argument --
+
 export
 Functor m => Functor (Swirl m r) where
   map = mapSnd
@@ -138,9 +153,17 @@ Monoid r => Functor m => Applicative (Swirl m r) where
   pure x = Yield x $ Done neutral
   fs <*> xs = squashOuts $ fs <&> flip map xs
 
+-- Caution! This implementation is, actually, not associative
+export
+Monoid r => Applicative m => Alternative (Swirl m r) where
+  empty = Done neutral
+  xs <|> ys = interleave (<+>) xs ys
+
 export
 Monoid r => Functor m => Monad (Swirl m r) where
   join = squashOuts
+
+-- Implementations over the second type argument --
 
 namespace Functor
 
