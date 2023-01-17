@@ -41,6 +41,21 @@ export
 (++) (Yield x xs) ys = Yield x $ xs ++ ys
 (++) (Effect xs)  ys = Effect $ xs <&> mapLazy (assert_total (++ ys))
 
+-- Ignores the resutl of the left operand.
+-- should be equivalent to `(>>) @{ByResult} . forgetRes`, but slightly more effective
+export
+andThen : Functor m => (0 _ : IfUnsolved r' ()) => Swirl m r' o -> Lazy (Swirl m r o) -> Swirl m r o
+andThen (Done _)     ys = ys
+andThen (Yield x xs) ys = Yield x $ xs `andThen` ys
+andThen (Effect xs)  ys = Effect $ xs <&> mapLazy (assert_total (`andThen` ys))
+
+infixl 1 `andThen` -- as `>>`
+
+-- experimental; if this clutters monad instance usage, it will be removed
+export
+(>>) : Functor m => (0 _ : IfUnsolved r' ()) => Swirl m r' o -> Lazy (Swirl m r o) -> Swirl m r o
+(>>) = andThen
+
 --- Interleaving ---
 
 export
@@ -209,6 +224,34 @@ namespace Monad
     using Applicative.ByResult where
       join = squashRes
       x >>= f = join @{ByResult} $ map @{ByResult} f x
+
+--- Hardcore processing ---
+
+--||| Allows to alter the whole rest of the stream with a decision function on output.
+--||| Decision function is given the current output and the original continuation and
+--||| returns unalterable prefix and new continuation, which replaces the orignal one.
+--||| Later this function goes onto the new continuation.
+--||| `wiggleOuts (\o, cnt => pure (pure o, cnt))` must produce an equivalent swirl.
+--covering
+--wiggleOuts : Functor m =>
+--             (0 _ : IfUnsolved r' ()) =>
+--             ((curr : o) -> (cont : Swirl m r o) -> m (Swirl m r' o, Swirl m r o)) ->
+--             Swirl m r o -> Swirl m r o
+--wiggleOuts f d@(Done x)   = d
+--wiggleOuts f $ Yield x ys = Effect $ f x ys <&> \(pre, cont) => pre `andThen` wiggleOuts f cont
+--wiggleOuts f $ Effect xs  = Effect $ xs <&> mapLazy (wiggleOuts f)
+
+||| Allows to alter the whole rest of the stream with a decision function on output.
+||| Decision function is given the current output and the original continuation and
+||| returns a swirl which as a result has a new continuation, which replaces the orignal one.
+||| Later this function goes onto the new continuation.
+export covering
+wriggleOuts : Functor m =>
+              ((curr : o) -> (cont : Swirl m r o) -> Swirl m (Swirl m r o) o) ->
+              Swirl m r o -> Swirl m r o
+wriggleOuts f d@(Done x)   = d
+wriggleOuts f $ Yield x ys = (f x ys >>= wriggleOuts f) @{ByResult}
+wriggleOuts f $ Effect xs  = Effect $ xs <&> mapLazy (wriggleOuts f)
 
 --- Eliminators ---
 
