@@ -227,20 +227,6 @@ namespace Monad
 
 --- Hardcore processing ---
 
---||| Allows to alter the whole rest of the stream with a decision function on output.
---||| Decision function is given the current output and the original continuation and
---||| returns unalterable prefix and new continuation, which replaces the orignal one.
---||| Later this function goes onto the new continuation.
---||| `wiggleOuts (\o, cnt => pure (pure o, cnt))` must produce an equivalent swirl.
---covering
---wiggleOuts : Functor m =>
---             (0 _ : IfUnsolved r' ()) =>
---             ((curr : o) -> (cont : Swirl m r o) -> m (Swirl m r' o, Swirl m r o)) ->
---             Swirl m r o -> Swirl m r o
---wiggleOuts f d@(Done x)   = d
---wiggleOuts f $ Yield x ys = Effect $ f x ys <&> \(pre, cont) => pre `andThen` wiggleOuts f cont
---wiggleOuts f $ Effect xs  = Effect $ xs <&> mapLazy (wiggleOuts f)
-
 ||| Allows to alter the whole rest of the stream with a decision function on output.
 ||| Decision function is given the current output and the original continuation and
 ||| returns a swirl which as a result has a new continuation, which replaces the orignal one.
