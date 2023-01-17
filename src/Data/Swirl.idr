@@ -71,8 +71,16 @@ mapMaybe f $ Effect xs  = Effect $ xs <&> mapLazy (assert_total $ mapMaybe f)
 --- Creation ---
 
 export
-lift : Functor m => m a -> Swirl m () a
-lift mx = Effect $ mx <&> \x => delay $ Yield x $ Done ()
+emit : Functor m => m a -> Swirl m () a
+emit mx = Effect $ mx <&> \x => delay $ Yield x $ Done ()
+
+export
+done : a -> Swirl m a Void
+done = Done
+
+export
+finish : Functor m => m a -> Swirl m a Void
+finish mx = Effect $ mx <&> \x => Done x
 
 --- Extension ---
 
