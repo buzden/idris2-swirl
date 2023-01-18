@@ -36,14 +36,14 @@ mapCtx f $ Effect xs  = Effect $ f $ xs <&> mapLazy (assert_total $ mapCtx f)
 --- Basic combinators ---
 
 export
-concatBy : Functor m => (resultComp : rl -> rr -> r) -> Swirl m rl o -> Lazy (Swirl m rr o) -> Swirl m r o
-concatBy fr (Done r)     ys = mapFst (fr r) ys
-concatBy fr (Yield x xs) ys = Yield x $ concatBy fr xs ys
-concatBy fr (Effect xs)  ys = Effect $ xs <&> mapLazy (\xs => assert_total concatBy fr xs ys)
+concatWithRes : Functor m => (resultComp : rl -> rr -> r) -> Swirl m rl o -> Lazy (Swirl m rr o) -> Swirl m r o
+concatWithRes fr (Done r)     ys = mapFst (fr r) ys
+concatWithRes fr (Yield x xs) ys = Yield x $ concatWithRes fr xs ys
+concatWithRes fr (Effect xs)  ys = Effect $ xs <&> mapLazy (\xs => assert_total concatWithRes fr xs ys)
 
 export %inline
 (++) : Functor m => Semigroup r => Swirl m r o -> Lazy (Swirl m r o) -> Swirl m r o
-(++) = concatBy (<+>)
+(++) = concatWithRes (<+>)
 
 -- Ignores the resutl of the left operand.
 -- should be equivalent to `(>>) @{ByResult} . forgetRes`, but slightly more effective and does not require `Monoid r`
@@ -165,7 +165,7 @@ mergeCtxs $ Effect xs  = Effect $ xs <&> pure . mapLazy (assert_total mergeCtxs)
 
 squashOuts' : Functor m => Swirl m r (Swirl m r o) -> Swirl m (List r) o
 squashOuts' $ Done x     = Done [x]
-squashOuts' $ Yield x ys = concatBy (::) x $ squashOuts' ys
+squashOuts' $ Yield x ys = concatWithRes (::) x $ squashOuts' ys
 squashOuts' $ Effect xs  = Effect $ xs <&> mapLazy (assert_total squashOuts')
 
 squashOuts : Monoid r => Functor m => Swirl m r (Swirl m r o) -> Swirl m r o
