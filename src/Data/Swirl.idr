@@ -99,11 +99,6 @@ export
 finish : Functor m => (0 _ : IfUnsolved o Void) => m a -> Swirl m a o
 finish mx = Effect $ mx <&> \x => Done x
 
---- Extension ---
-
--- Intersperse an action between yields? Or intersperse an action between any two actions/yields?
--- intersperse :
-
 --- Internal foldings ---
 
 export
@@ -249,9 +244,30 @@ wiggleOuts : Functor m =>
              (0 _ : IfUnsolved r' ()) =>
              ((curr : o) -> (cont : Swirl m r o) -> Swirl m r' (Swirl m r o)) ->
              Swirl m r o -> Swirl m r o
-wiggleOuts f d@(Done x)   = d
+wiggleOuts f d@(Done _)   = d
 wiggleOuts f $ Yield x ys = join $ forgetRes $ map (wiggleOuts f) $ f x ys
 wiggleOuts f $ Effect xs  = Effect $ xs <&> mapLazy (wiggleOuts f)
+
+--- Extension ---
+
+-- Effects of the separator happen before the next yield of an output
+export
+intersperseOuts' : Functor m => (r' -> r -> r) -> (sep : Swirl m r' o) -> Swirl m r o -> Swirl m r o
+intersperseOuts' fr sep $ d@(Done _) = d
+intersperseOuts' fr sep $ Yield x ys = Yield x $ assert_total flip wriggleOuts ys $ \o, cont =>
+                                         (sep <&> \r' => Yield o $ map @{ByResult} (fr r') cont) @{ByResult}
+intersperseOuts' fr sep $ Effect xs  = Effect $ xs <&> mapLazy (assert_total intersperseOuts' fr sep)
+
+-- Ignores the result of `sep`, the same as `intersperseOuts' (const id)`, but slighly more effective
+export
+intersperseOuts_ : Functor m => (0 _ : IfUnsolved r' ()) => (sep : Swirl m r' o) -> Swirl m r o -> Swirl m r o
+intersperseOuts_ sep $ d@(Done _) = d
+intersperseOuts_ sep $ Yield x ys = Yield x $ assert_total flip wriggleOuts ys $ \o, cont => (sep <&> const (Yield o cont)) @{ByResult}
+intersperseOuts_ sep $ Effect xs  = Effect $ xs <&> mapLazy (assert_total intersperseOuts_ sep)
+
+export
+intersperseOuts : Functor m => Semigroup r => (sep : Swirl m r o) -> Swirl m r o -> Swirl m r o
+intersperseOuts = intersperseOuts' (<+>)
 
 --- Eliminators ---
 
