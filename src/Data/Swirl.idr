@@ -36,13 +36,17 @@ mapCtx f $ Effect xs  = Effect $ f $ xs <&> mapLazy (assert_total $ mapCtx f)
 --- Basic combinators ---
 
 export
+concatBy : Functor m => (resultComp : rl -> rr -> r) -> Swirl m rl o -> Lazy (Swirl m rr o) -> Swirl m r o
+concatBy fr (Done r)     ys = mapFst (fr r) ys
+concatBy fr (Yield x xs) ys = Yield x $ concatBy fr xs ys
+concatBy fr (Effect xs)  ys = Effect $ xs <&> mapLazy (\xs => assert_total concatBy fr xs ys)
+
+export %inline
 (++) : Functor m => Semigroup r => Swirl m r o -> Lazy (Swirl m r o) -> Swirl m r o
-(++) (Done r)     ys = mapFst (<+> r) ys
-(++) (Yield x xs) ys = Yield x $ xs ++ ys
-(++) (Effect xs)  ys = Effect $ xs <&> mapLazy (assert_total (++ ys))
+(++) = concatBy (<+>)
 
 -- Ignores the resutl of the left operand.
--- should be equivalent to `(>>) @{ByResult} . forgetRes`, but slightly more effective
+-- should be equivalent to `(>>) @{ByResult} . forgetRes`, but slightly more effective and does not require `Monoid r`
 export
 andThen : Functor m => (0 _ : IfUnsolved r' ()) => Swirl m r' o -> Lazy (Swirl m r o) -> Swirl m r o
 andThen (Done _)     ys = ys
@@ -52,7 +56,7 @@ andThen (Effect xs)  ys = Effect $ xs <&> mapLazy (assert_total (`andThen` ys))
 infixl 1 `andThen` -- as `>>`
 
 -- experimental; if this clutters monad instance usage, it will be removed
-export
+export %inline
 (>>) : Functor m => (0 _ : IfUnsolved r' ()) => Swirl m r' o -> Lazy (Swirl m r o) -> Swirl m r o
 (>>) = andThen
 
