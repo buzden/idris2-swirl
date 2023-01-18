@@ -37,6 +37,15 @@ readAsLines : HasIO io => (0 _ : IfUnsolved io IO) =>
               Swirl io (f FileError) String
 readAsLines = emitUntilEOF fGetLine
 
+-- stops on a file error
+export
+readAsChunks : HasIO io => (0 _ : IfUnsolved io IO) =>
+               Alternative f => (0 _ : IfUnsolved f Maybe) =>
+               (chunkMaxSize : Nat) ->
+               File ->
+               Swirl io (f FileError) String
+readAsChunks sz = emitUntilEOF $ \file => fGetChars file $ cast sz
+
 -- stops on a file error, ignores the result of input swirl
 export
 writeAll : HasIO io => (0 _ : IfUnsolved io IO) =>
