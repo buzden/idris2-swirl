@@ -1,6 +1,6 @@
 module Data.Swirl
 
-import Control.MonadRec
+import public Control.MonadRec
 import Control.WellFounded
 
 import public Language.Implicits.IfUnsolved

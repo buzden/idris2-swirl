@@ -1,0 +1,11 @@
+rm -rf build
+
+flock "$1" pack -q install-deps test.ipkg && \
+pack run test.ipkg
+
+echo "--------"
+cat to
+echo "--------"
+diff from to
+
+rm -rf build

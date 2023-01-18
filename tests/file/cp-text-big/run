@@ -1,0 +1,15 @@
+rm -rf build
+
+cat /dev/random | tr -dc [:alnum:][:space:] | head -c 100M > from
+
+stat --format='%s' from
+
+flock "$1" pack -q install-deps test.ipkg && \
+pack run test.ipkg
+
+echo "--------"
+diff from to
+
+rm -rf from to
+
+rm -rf build
