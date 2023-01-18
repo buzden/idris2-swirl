@@ -11,7 +11,7 @@ import System.File.ReadWrite
 
 -- stops the swirl if it gets a file error
 emitUntilEOF : HasIO io => (0 _ : IfUnsolved io IO) =>
-               Alternative f => (0 _ : IfUnsolved f SnocList) =>
+               Alternative f => (0 _ : IfUnsolved f Maybe) =>
                (File -> io (Either e a)) ->
                File ->
                Swirl io (f e) a
@@ -24,7 +24,7 @@ emitUntilEOF act file = let _ = Prelude.MonoidAlternative in fEOF file >>= \case
 -- stops on a file error
 export
 readAsChars : HasIO io => (0 _ : IfUnsolved io IO) =>
-              Alternative f => (0 _ : IfUnsolved f SnocList) =>
+              Alternative f => (0 _ : IfUnsolved f Maybe) =>
               File ->
               Swirl io (f FileError) Char
 readAsChars = emitUntilEOF fGetChar
@@ -32,7 +32,7 @@ readAsChars = emitUntilEOF fGetChar
 -- stops on a file error
 export
 readAsLines : HasIO io => (0 _ : IfUnsolved io IO) =>
-              Alternative f => (0 _ : IfUnsolved f SnocList) =>
+              Alternative f => (0 _ : IfUnsolved f Maybe) =>
               File ->
               Swirl io (f FileError) String
 readAsLines = emitUntilEOF fGetLine
@@ -40,7 +40,7 @@ readAsLines = emitUntilEOF fGetLine
 -- stops on a file error, ignores the result of input swirl
 export
 writeAll : HasIO io => (0 _ : IfUnsolved io IO) =>
-           Alternative f => (0 _ : IfUnsolved f SnocList) =>
+           Alternative f => (0 _ : IfUnsolved f Maybe) =>
            (0 _ : IfUnsolved r ()) =>
            (0 _ : IfUnsolved o Void) =>
            File ->
@@ -53,7 +53,7 @@ writeAll file sw = let _ = Prelude.MonoidAlternative in forgetOuts $ wiggleOuts 
 -- stops on a file error, saves the result of original swirl if it can
 export
 writeAll' : HasIO io => (0 _ : IfUnsolved io IO) =>
-            Alternative f => (0 _ : IfUnsolved f SnocList) =>
+            Alternative f => (0 _ : IfUnsolved f Maybe) =>
             (0 _ : IfUnsolved o Void) =>
             File ->
             Swirl io r String ->
