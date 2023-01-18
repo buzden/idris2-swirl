@@ -163,6 +163,11 @@ mergeCtxs $ Done x     = Done x
 mergeCtxs $ Yield x ys = (mapCtx pure x ++ mergeCtxs ys) @{Compose}
 mergeCtxs $ Effect xs  = Effect $ xs <&> pure . mapLazy (assert_total mergeCtxs)
 
+squashOuts' : Functor m => Swirl m r (Swirl m r o) -> Swirl m (List r) o
+squashOuts' $ Done x     = Done [x]
+squashOuts' $ Yield x ys = concatBy (::) x $ squashOuts' ys
+squashOuts' $ Effect xs  = Effect $ xs <&> mapLazy (assert_total squashOuts')
+
 squashOuts : Monoid r => Functor m => Swirl m r (Swirl m r o) -> Swirl m r o
 squashOuts $ Done x     = Done x
 squashOuts $ Yield x ys = x ++ squashOuts ys
