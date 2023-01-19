@@ -15,17 +15,27 @@ data Swirl : (Type -> Type) -> (result, output : Type) -> Type where
 
 -- `m (Lazy ...)` exploits totality checker's bug to make the type as if it's strictly positive.
 
---- Basic mapping ---
+--- General processing ---
 
 %inline
 mapLazy : (a -> b) -> Lazy a -> Lazy b
 mapLazy f = delay . f . force
 
+-- inlining this function somewhy seemingly hangs the compiler
+trsw : Functor m => (r -> Swirl m r' o') -> (o -> Lazy (Swirl m r o) -> Swirl m r' o') -> Swirl m r o -> Swirl m r' o'
+trsw done yield $ Done x     = done x
+trsw done yield $ Yield x ys = yield x ys
+trsw done yield $ Effect xs  = Effect $ xs <&> mapLazy (assert_total $ trsw done yield)
+
+%inline
+trsw' : Functor m => (o -> Lazy (Swirl m r o) -> Swirl m r o') -> Swirl m r o -> Swirl m r o'
+trsw' = trsw Done
+
+--- Basic mapping ---
+
 export
 Functor m => Bifunctor (Swirl m) where
-  bimap fr fo $ Done r       = Done $ fr r
-  bimap fr fo $ Yield o rest = Yield (fo o) (bimap fr fo rest)
-  bimap fr fo $ Effect ef    = Effect $ ef <&> mapLazy (assert_total $ bimap fr fo)
+  bimap fr fo = trsw (Done . fr) $ \o, rest => Yield (fo o) $ assert_total bimap fr fo rest
 
 export
 mapCtx : Functor m => (forall a. m a -> n a) -> Swirl m r o -> Swirl n r o
@@ -37,9 +47,7 @@ mapCtx f $ Effect xs  = Effect $ f $ xs <&> mapLazy (assert_total $ mapCtx f)
 
 export
 concatWithRes : Functor m => (resultComp : rl -> rr -> r) -> Swirl m rl o -> Lazy (Swirl m rr o) -> Swirl m r o
-concatWithRes fr (Done r)     ys = mapFst (fr r) ys
-concatWithRes fr (Yield x xs) ys = Yield x $ concatWithRes fr xs ys
-concatWithRes fr (Effect xs)  ys = Effect $ xs <&> mapLazy (\xs => assert_total concatWithRes fr xs ys)
+concatWithRes fr xs ys = trsw (flip mapFst ys . fr) (\o, xs => Yield o $ assert_total concatWithRes fr xs ys) xs
 
 export %inline
 (++) : Functor m => Semigroup r => Swirl m r o -> Lazy (Swirl m r o) -> Swirl m r o
@@ -49,9 +57,7 @@ export %inline
 -- should be equivalent to `(>>) @{ByResult} . forgetRes`, but slightly more effective and does not require `Monoid r`
 export
 andThen : Functor m => (0 _ : IfUnsolved r' ()) => Swirl m r' o -> Lazy (Swirl m r o) -> Swirl m r o
-andThen (Done _)     ys = ys
-andThen (Yield x xs) ys = Yield x $ xs `andThen` ys
-andThen (Effect xs)  ys = Effect $ xs <&> mapLazy (assert_total (`andThen` ys))
+andThen xs ys = trsw (const ys) (\x, zs => Yield x $ assert_total $ zs `andThen` ys) xs
 
 infixl 1 `andThen` -- as `>>`
 
@@ -77,17 +83,13 @@ interleave fr e@(Effect xs) (Effect ys)  = Effect [| f xs ys |] where
 
 export
 filter : Functor m => (a -> Bool) -> Swirl m r a -> Swirl m r a
-filter _ $ Done x     = Done x
-filter f $ Yield x ys = if f x then Yield x (filter f ys) else filter f ys
-filter f $ Effect xs  = Effect $ xs <&> mapLazy (assert_total $ filter f)
+filter f = trsw' $ \x, ys => assert_total $ if f x then Yield x (filter f ys) else filter f ys
 
 export
 mapMaybe : Functor m => (a -> Maybe b) -> Swirl m r a -> Swirl m r b
-mapMaybe _ $ Done x     = Done x
-mapMaybe f $ Yield x ys = case f x of
-                            Just y  => Yield y $ mapMaybe f ys
-                            Nothing => mapMaybe f ys
-mapMaybe f $ Effect xs  = Effect $ xs <&> mapLazy (assert_total $ mapMaybe f)
+mapMaybe f = trsw' $ \x, ys => assert_total $ case f x of
+  Just y  => Yield y $ mapMaybe f ys
+  Nothing => mapMaybe f ys
 
 --- Creation ---
 
@@ -107,9 +109,7 @@ finish mx = Effect $ mx <&> \x => Done x
 
 export
 foldResOutsBy : Functor m => (0 _ : IfUnsolved o Void) => (a -> b -> b) -> Swirl m b a -> Swirl m b o
-foldResOutsBy f $ Done x     = Done x
-foldResOutsBy f $ Yield x ys = assert_total foldResOutsBy f $ mapFst (f x) ys
-foldResOutsBy f $ Effect xs  = Effect $ xs <&> mapLazy (assert_total $ foldResOutsBy f)
+foldResOutsBy f = trsw' $ \x, ys => assert_total foldResOutsBy f $ mapFst (f x) ys
 
 export
 foldResOuts : Semigroup a => Functor m => (0 _ : IfUnsolved o Void) => Swirl m a a -> Swirl m a o
@@ -139,21 +139,15 @@ export
 emitRes : Functor m => Monoid r =>
           (0 _ : IfUnsolved o Void) => (0 _ : IfUnsolved r ()) =>
           Swirl m a o -> Swirl m r a
-emitRes $ Done x     = Yield x $ Done neutral
-emitRes $ Yield _ xs = emitRes xs
-emitRes $ Effect xs  = Effect $ xs <&> mapLazy (assert_total emitRes)
+emitRes = trsw (\x => Yield x $ Done neutral) (\_, xs => assert_total emitRes xs)
 
 export
 forgetOuts : Functor m => (0 _ : IfUnsolved o Void) => Swirl m r a -> Swirl m r o
-forgetOuts $ Done x     = Done x
-forgetOuts $ Yield _ ys = forgetOuts ys
-forgetOuts $ Effect xs  = Effect $ xs <&> mapLazy (assert_total forgetOuts)
+forgetOuts = trsw' $ \_, ys => assert_total forgetOuts ys
 
 export
 forgetRes : Functor m => Monoid r => (0 _ : IfUnsolved r ()) => Swirl m r' a -> Swirl m r a
-forgetRes $ Done _     = Done neutral
-forgetRes $ Yield x ys = Yield x $ forgetRes ys
-forgetRes $ Effect xs  = Effect $ xs <&> mapLazy (assert_total forgetRes)
+forgetRes = trsw (const $ Done neutral) (\x, ys => Yield x $ assert_total forgetRes ys)
 
 --- Flattenings ---
 
@@ -165,19 +159,13 @@ mergeCtxs $ Effect xs  = Effect $ xs <&> pure . mapLazy (assert_total mergeCtxs)
 
 export
 squashOutsCollectRes : Functor m => Alternative f => (0 _ : IfUnsolved f List) => Swirl m r (Swirl m r o) -> Swirl m (f r) o
-squashOutsCollectRes $ Done x     = Done $ pure x
-squashOutsCollectRes $ Yield x ys = concatWithRes (\l, r => pure l <|> r) x $ squashOutsCollectRes ys
-squashOutsCollectRes $ Effect xs  = Effect $ xs <&> mapLazy (assert_total squashOutsCollectRes)
+squashOutsCollectRes = trsw (Done . pure) $ \x, ys => concatWithRes (\l, r => pure l <|> r) x $ assert_total squashOutsCollectRes ys
 
 squashOuts : Monoid r => Functor m => Swirl m r (Swirl m r o) -> Swirl m r o
-squashOuts $ Done x     = Done x
-squashOuts $ Yield x ys = x ++ squashOuts ys
-squashOuts $ Effect xs  = Effect $ xs <&> mapLazy (assert_total squashOuts)
+squashOuts = trsw' $ \x, ys => x ++ assert_total squashOuts ys
 
 squashRes : Functor m => Swirl m (Swirl m r o) o -> Swirl m r o
-squashRes $ Done x     = x
-squashRes $ Yield x ys = Yield x $ squashRes ys
-squashRes $ Effect xs  = Effect $ xs <&> mapLazy (assert_total squashRes)
+squashRes = trsw id $ \x, ys => Yield x $ assert_total squashRes ys
 
 --- Functor, Applicative, Monad ---
 
@@ -240,9 +228,7 @@ export covering
 wriggleOuts : Functor m =>
               ((curr : o) -> (cont : Lazy (Swirl m r o)) -> Swirl m (Swirl m r o) o) ->
               Swirl m r o -> Swirl m r o
-wriggleOuts f d@(Done x)   = d
-wriggleOuts f $ Yield x ys = (f x ys >>= wriggleOuts f) @{ByResult}
-wriggleOuts f $ Effect xs  = Effect $ xs <&> mapLazy (wriggleOuts f)
+wriggleOuts f = trsw' $ \x, ys => (f x ys >>= wriggleOuts f) @{ByResult}
 
 ||| Allows to alter the whole rest of the stream with a decision function on output.
 ||| Decision function is given the current output and the original continuation and
@@ -254,26 +240,20 @@ wiggleOuts : Functor m =>
              (0 _ : IfUnsolved r' ()) =>
              ((curr : o) -> (cont : Lazy (Swirl m r o)) -> Swirl m r' (Swirl m r o)) ->
              Swirl m r o -> Swirl m r o
-wiggleOuts f d@(Done _)   = d
-wiggleOuts f $ Yield x ys = join $ forgetRes $ map (wiggleOuts f) $ f x ys
-wiggleOuts f $ Effect xs  = Effect $ xs <&> mapLazy (wiggleOuts f)
+wiggleOuts f = trsw' $ \x, ys => join $ forgetRes $ map (wiggleOuts f) $ f x ys
 
 --- Extension ---
 
 -- Effects of the separator happen before the next yield of an output
 export
 intersperseOuts' : Functor m => (r' -> r -> r) -> (sep : Swirl m r' o) -> Swirl m r o -> Swirl m r o
-intersperseOuts' fr sep $ d@(Done _) = d
-intersperseOuts' fr sep $ Yield x ys = Yield x $ assert_total flip wriggleOuts ys $ \o, cont =>
-                                         flip mapFst sep $ \r' => Yield o $ mapFst (fr r') cont
-intersperseOuts' fr sep $ Effect xs  = Effect $ xs <&> mapLazy (assert_total intersperseOuts' fr sep)
+intersperseOuts' fr sep = trsw' $ \x, ys => Yield x $ assert_total flip wriggleOuts ys $ \o, cont =>
+  flip mapFst sep $ \r' => Yield o $ mapFst (fr r') cont
 
 -- Ignores the result of `sep`, the same as `intersperseOuts' (const id)`, but slighly more effective
 export
 intersperseOuts_ : Functor m => (0 _ : IfUnsolved r' ()) => (sep : Swirl m r' o) -> Swirl m r o -> Swirl m r o
-intersperseOuts_ sep $ d@(Done _) = d
-intersperseOuts_ sep $ Yield x ys = Yield x $ assert_total flip wriggleOuts ys $ \o, cont => flip mapFst sep $ const $ Yield o cont
-intersperseOuts_ sep $ Effect xs  = Effect $ xs <&> mapLazy (assert_total intersperseOuts_ sep)
+intersperseOuts_ sep = trsw' $ \x, ys => Yield x $ assert_total flip wriggleOuts ys $ flip mapFst sep .: const .: Yield
 
 export
 intersperseOuts : Functor m => Semigroup r => (sep : Swirl m r o) -> Swirl m r o -> Swirl m r o
