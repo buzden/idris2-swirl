@@ -56,7 +56,7 @@ writeAll : HasIO io => (0 _ : IfUnsolved io IO) =>
            Swirl io r String ->
            Swirl io (f FileError) o
 writeAll file sw = let _ = Prelude.MonoidAlternative in forgetOuts $ wiggleOuts wgl $ forgetRes sw where
-  wgl : String -> Swirl io (f FileError) String -> Swirl io () (Swirl io (f FileError) String)
+  wgl : String -> Lazy (Swirl io (f FileError) String) -> Swirl io () (Swirl io (f FileError) String)
   wgl str cont = fPutStr file str >>= pure . either (done . pure) (const cont)
 
 -- stops on a file error, saves the result of original swirl if it can
@@ -68,5 +68,5 @@ writeAll' : HasIO io => (0 _ : IfUnsolved io IO) =>
             Swirl io r String ->
             Swirl io (Either FileError r) o
 writeAll' file sw = forgetOuts $ wriggleOuts wgl $ map @{ByResult} Right sw where
-  wgl : String -> Swirl io (Either FileError r) String -> Swirl io (Swirl io (Either FileError r) String) String
+  wgl : String -> Lazy (Swirl io (Either FileError r) String) -> Swirl io (Swirl io (Either FileError r) String) String
   wgl str cont = (finish (fPutStr file str) >>= done . either (done . Left) (const cont)) @{ByResult}

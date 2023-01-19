@@ -238,7 +238,7 @@ namespace Monad
 ||| Later this function goes onto the new continuation.
 export covering
 wriggleOuts : Functor m =>
-              ((curr : o) -> (cont : Swirl m r o) -> Swirl m (Swirl m r o) o) ->
+              ((curr : o) -> (cont : Lazy (Swirl m r o)) -> Swirl m (Swirl m r o) o) ->
               Swirl m r o -> Swirl m r o
 wriggleOuts f d@(Done x)   = d
 wriggleOuts f $ Yield x ys = (f x ys >>= wriggleOuts f) @{ByResult}
@@ -252,7 +252,7 @@ export covering
 wiggleOuts : Functor m =>
              Monoid r =>
              (0 _ : IfUnsolved r' ()) =>
-             ((curr : o) -> (cont : Swirl m r o) -> Swirl m r' (Swirl m r o)) ->
+             ((curr : o) -> (cont : Lazy (Swirl m r o)) -> Swirl m r' (Swirl m r o)) ->
              Swirl m r o -> Swirl m r o
 wiggleOuts f d@(Done _)   = d
 wiggleOuts f $ Yield x ys = join $ forgetRes $ map (wiggleOuts f) $ f x ys
