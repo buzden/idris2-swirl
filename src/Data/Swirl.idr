@@ -265,14 +265,14 @@ export
 intersperseOuts' : Functor m => (r' -> r -> r) -> (sep : Swirl m r' o) -> Swirl m r o -> Swirl m r o
 intersperseOuts' fr sep $ d@(Done _) = d
 intersperseOuts' fr sep $ Yield x ys = Yield x $ assert_total flip wriggleOuts ys $ \o, cont =>
-                                         (sep <&> \r' => Yield o $ map @{ByResult} (fr r') cont) @{ByResult}
+                                         flip mapFst sep $ \r' => Yield o $ mapFst (fr r') cont
 intersperseOuts' fr sep $ Effect xs  = Effect $ xs <&> mapLazy (assert_total intersperseOuts' fr sep)
 
 -- Ignores the result of `sep`, the same as `intersperseOuts' (const id)`, but slighly more effective
 export
 intersperseOuts_ : Functor m => (0 _ : IfUnsolved r' ()) => (sep : Swirl m r' o) -> Swirl m r o -> Swirl m r o
 intersperseOuts_ sep $ d@(Done _) = d
-intersperseOuts_ sep $ Yield x ys = Yield x $ assert_total flip wriggleOuts ys $ \o, cont => (sep <&> const (Yield o cont)) @{ByResult}
+intersperseOuts_ sep $ Yield x ys = Yield x $ assert_total flip wriggleOuts ys $ \o, cont => flip mapFst sep $ const $ Yield o cont
 intersperseOuts_ sep $ Effect xs  = Effect $ xs <&> mapLazy (assert_total intersperseOuts_ sep)
 
 export
