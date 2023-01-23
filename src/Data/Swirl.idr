@@ -1,5 +1,7 @@
 module Data.Swirl
 
+import Data.Either
+
 import public Control.MonadRec
 import Control.WellFounded
 
@@ -107,31 +109,47 @@ finish mx = Effect $ mx <&> \x => Done x
 
 --- Internal foldings ---
 
-export
-foldResOutsBy : Functor m => (0 _ : IfUnsolved o Void) => (a -> b -> b) -> Swirl m b a -> Swirl m b o
-foldResOutsBy f = trsw' $ \x, ys => assert_total foldResOutsBy f $ mapFst (f x) ys
+namespace ToResult
 
-export
-foldResOuts : Semigroup a => Functor m => (0 _ : IfUnsolved o Void) => Swirl m a a -> Swirl m a o
-foldResOuts = foldResOutsBy (<+>)
+  export
+  foldResOutsBy : Functor m => (0 _ : IfUnsolved o Void) => (a -> b -> b) -> Swirl m b a -> Swirl m b o
+  foldResOutsBy f = trsw' $ \x, ys => assert_total foldResOutsBy f $ mapFst (f x) ys
 
-export
-foldOutsBy : Functor m =>
+  export
+  foldResOuts : Semigroup a => Functor m => (0 _ : IfUnsolved o Void) => Swirl m a a -> Swirl m a o
+  foldResOuts = foldResOutsBy (<+>)
+
+  export
+  foldOutsBy : Functor m =>
+               (0 _ : IfUnsolved o Void) => (0 _ : IfUnsolved r ()) =>
+               (a -> b -> b) -> b -> Swirl m r a -> Swirl m b o
+  foldOutsBy f x = foldResOutsBy f . mapFst (const x)
+
+  export
+  foldOuts : Monoid a => Functor m =>
              (0 _ : IfUnsolved o Void) => (0 _ : IfUnsolved r ()) =>
-             (a -> b -> b) -> b -> Swirl m r a -> Swirl m b o
-foldOutsBy f x = foldResOutsBy f . mapFst (const x)
+             Swirl m r a -> Swirl m a o
+  foldOuts = foldResOuts . mapFst (const neutral)
 
-export
-foldOuts : Monoid a => Functor m =>
-           (0 _ : IfUnsolved o Void) => (0 _ : IfUnsolved r ()) =>
-           Swirl m r a -> Swirl m a o
-foldOuts = foldResOuts . mapFst (const neutral)
+  export
+  outputs : Functor m =>
+            (0 _ : IfUnsolved o Void) => (0 _ : IfUnsolved r ()) =>
+            Swirl m r a -> Swirl m (List a) o
+  outputs = foldOutsBy (::) []
 
-export
-outputs : Functor m =>
-          (0 _ : IfUnsolved o Void) => (0 _ : IfUnsolved r ()) =>
-          Swirl m r a -> Swirl m (List a) o
-outputs = foldOutsBy (::) []
+namespace ToOutput
+
+  export
+  foldOutsBy : Functor m => (b -> a -> b) -> b -> Swirl m r a -> Swirl m r b
+  foldOutsBy f init = trsw (\x => Yield init $ Done x) $ \x, cont => assert_total foldOutsBy f (f init x) cont
+
+  export
+  foldOuts : Functor m => Monoid a => Swirl m r a -> Swirl m r a
+  foldOuts = foldOutsBy (<+>) neutral
+
+  export
+  outputs : Functor m => Swirl m r o -> Swirl m r (SnocList o)
+  outputs = foldOutsBy (:<) [<]
 
 --- Adapters ---
 
@@ -156,6 +174,10 @@ mergeCtxs : Monoid r => Applicative m => Applicative n => Swirl m r (Swirl n r o
 mergeCtxs $ Done x     = Done x
 mergeCtxs $ Yield x ys = (mapCtx pure x ++ mergeCtxs ys) @{Compose}
 mergeCtxs $ Effect xs  = Effect $ xs <&> pure . mapLazy (assert_total mergeCtxs)
+
+export
+squashOutsCollectResBy : Functor m => (r -> r' -> r') -> Swirl m r' (Swirl m r o) -> Swirl m r' o
+squashOutsCollectResBy fr = trsw' $ \xs, ys => concatWithRes fr xs $ assert_total squashOutsCollectResBy fr ys
 
 export
 squashOutsCollectRes : Functor m => Alternative f => (0 _ : IfUnsolved f List) => Swirl m r (Swirl m r o) -> Swirl m (f r) o
@@ -220,6 +242,12 @@ namespace Monad
 
 --- Hardcore processing ---
 
+export covering
+wriggleOuts' : Functor m =>
+               ((curr : o) -> (cont : Lazy (Swirl m r o)) -> Swirl m (Either (Swirl m r o) (Swirl m r a)) a) ->
+               Swirl m r o -> Swirl m r a
+wriggleOuts' f = trsw' $ \x, ys => (f x ys >>= fromEither . mapFst (wriggleOuts' f)) @{ByResult}
+
 ||| Allows to alter the whole rest of the stream with a decision function on output.
 ||| Decision function is given the current output and the original continuation and
 ||| returns a swirl which as a result has a new continuation, which replaces the orignal one.
@@ -229,6 +257,14 @@ wriggleOuts : Functor m =>
               ((curr : o) -> (cont : Lazy (Swirl m r o)) -> Swirl m (Swirl m r o) o) ->
               Swirl m r o -> Swirl m r o
 wriggleOuts f = trsw' $ \x, ys => (f x ys >>= wriggleOuts f) @{ByResult}
+
+export covering
+wiggleOuts' : Functor m =>
+              Monoid r =>
+              (0 _ : IfUnsolved r' ()) =>
+              ((curr : o) -> (cont : Lazy (Swirl m r o)) -> Swirl m r' (Either (Swirl m r o) (Swirl m r a))) ->
+              Swirl m r o -> Swirl m r a
+wiggleOuts' f = trsw' $ \x, ys => join $ forgetRes $ fromEither . mapFst (wiggleOuts' f) <$> f x ys
 
 ||| Allows to alter the whole rest of the stream with a decision function on output.
 ||| Decision function is given the current output and the original continuation and
@@ -241,6 +277,16 @@ wiggleOuts : Functor m =>
              ((curr : o) -> (cont : Lazy (Swirl m r o)) -> Swirl m r' (Swirl m r o)) ->
              Swirl m r o -> Swirl m r o
 wiggleOuts f = trsw' $ \x, ys => join $ forgetRes $ map (wiggleOuts f) $ f x ys
+
+--- Special mappings ---
+
+export
+tryOrDie : Functor m => (o -> Either e a) -> Swirl m r o -> Swirl m (Either e r) a
+tryOrDie f = assert_total $ wriggleOuts' fr . mapFst Right where
+  fr : o -> Lazy (Swirl m (Either e r) o) -> Swirl m (Either (Swirl m (Either e r) o) (Swirl m (Either e r) a)) a
+  fr x cont = case f x of
+    Right y => Yield y $ pure @{ByResult} $ Left cont
+    Left e  => pure @{ByResult} $ Right $ pure @{ByResult} $ Left e
 
 --- Extension ---
 

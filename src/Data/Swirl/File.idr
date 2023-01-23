@@ -62,7 +62,6 @@ writeAll file sw = let _ = Prelude.MonoidAlternative in forgetOuts $ wiggleOuts 
 -- stops on a file error, saves the result of original swirl if it can
 export
 writeAll' : HasIO io => (0 _ : IfUnsolved io IO) =>
-            Alternative f => (0 _ : IfUnsolved f Maybe) =>
             (0 _ : IfUnsolved o Void) =>
             File ->
             Swirl io r String ->
