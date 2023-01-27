@@ -10,6 +10,7 @@ sourcedir = "src"
 
 depends = if-unsolved-implicit
         , tailrec
+        , contrib
 
 modules = Data.Swirl
         , Data.Swirl.File
