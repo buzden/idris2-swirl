@@ -22,11 +22,46 @@ data Swirl : (Type -> Type) -> (error, result, output : Type) -> Type where
   Effect : m (Lazy (Swirl m e r o)) -> Swirl m e r o
   BindR  : Lazy (Swirl m e r' o) -> (r' -> Swirl m e r o) -> Swirl m e r o
   BindE  : Lazy (Swirl m e' r o) -> (e' -> Swirl m e r o) -> Swirl m e r o
-  Ensure : Lazy (Swirl m e' r' o) -> Lazy (Swirl m e r o) -> Swirl m (These e' e) (r', r) o
+  Ensure : Lazy (Swirl m Void r' Void) -> Lazy (Swirl m e r o) -> Swirl m e (r', r) o
 
 %name Swirl sw, sv, su
 
--- `m (Lazy ...)` in `Effect` exploits totality checker's bug to make the type as if it's strictly positive.
+-- Discussion:
+--
+-- - `Effect` constructor
+--
+--   `m (Lazy ...)` in `Effect` exploits totality checker's bug to make the type as if it's strictly positive.
+--   Actually, it seems, the whole `data` definition should be `covering`.
+--   But, by the idea, this `m` must be `Functor`, and I'm not sure whether this is possible to get the situation
+--   when this data type really is not total.
+--
+-- - `Ensure` constructor, output parameter of "finally" section.
+--
+--   the `finally` part must not emit values because of the following:
+--   if the `finally` part can emit a value, it means that one can bind (`>>=`) the whole `Ensure` expression by
+--   some `Swirl` which, in its order, may fail. This would lead to either ability of non-full "finally" block to be executed,
+--   or the need of failure-ignoring variant of `>>=` to be used for it. Both it possible, but both are counter-intuitive.
+--
+--   By the way, at least at the time of writing this, the Scala's fs2 library has the same problem and generally the `release`
+--   process of a braket pattern *can* be interrupted by an exception in the RHS of the `flatMap` if it emits some values.
+--
+-- - `Ensure` constructor, error parameter of "finally" action.
+--
+--   An ability of the "finally" action to fail would lead the joining function to have the following signature
+--
+--   ```idris
+--   squashOuts' : Functor m => Swirl m e r (Swirl m e' r' o) -> Swirl m (These e $ List1 e') (r, List r') o
+--   ```
+--
+--   So strange resulting error type is because the error can occur in the finally section along with an error in the main section.
+--   Several suberrors may occur if is was thrown in finally sections of both main section and outer error handler.
+--
+--   It all means that even if the error type of outer and inner `Swirl`s are the same, we cannot
+--   use `Monad` signature for `>>=` and `join`.
+--   Also, it means that the `finally` section of `Ensure` can be unintentionally interrupted by the subsequent binds.
+--   This may lead a nessesity to use finally sections in finally sections which emit values, which all looks fragile.
+--
+--   That all lead to a decision of inability to fail for the "finally" action.
 
 %inline %tcinline
 mapLazy : (a -> b) -> Lazy a -> Lazy b
@@ -42,7 +77,7 @@ Functor m => Bifunctor (Swirl m e) where
   bimap fr fo $ Effect msw = Effect $ msw <&> mapLazy (assert_total bimap fr fo)
   bimap fr fo $ BindR x f  = BindR (bimap id fo x) (bimap fr fo . f)
   bimap fr fo $ BindE x h  = BindE (bimap fr fo x) (bimap fr fo . h)
-  bimap fr fo $ Ensure l x = Ensure (bimap id fo l) (bimap id fo x) `BindR` Done . fr
+  bimap fr fo $ Ensure l x = Ensure l (bimap id fo x) `BindR` Done . fr
 
 %transform "swirl: mapFst id" mapFst {f=Swirl m e} (\x => x) x = x
 %transform "swirl: mapSnd id" mapSnd {f=Swirl m e} (\x => x) x = x
@@ -227,55 +262,47 @@ emitOrFail = either fail emit
 
 namespace ComposeResults
 
-  -- So strange resulting error type is because the error can occur in the finally section along with an error in the main section.
-  -- Several suberrors may occur if is was thrown in finally sections of both main section and outer error handler.
   export
-  mergeCtxs' : Applicative m => Applicative n => Swirl m e r (Swirl n e' r' o) -> Swirl (m . n) (These e $ List1 e') (r, List r') o
+  mergeCtxs' : Applicative m => Applicative n => Swirl m e r (Swirl n e'' r'' o) -> Swirl (m . n) (Either e e'') (r, List r'') o
   mergeCtxs' $ Done x     = Done (x, [])
-  mergeCtxs' $ Fail e     = Fail $ This e
-  mergeCtxs' $ Yield x sw = concat @{Compose} (mapSnd . (::)) (mapCtx pure $ mapError (That . pure) x) (mergeCtxs' sw)
+  mergeCtxs' $ Fail e     = Fail $ Left e
+  mergeCtxs' $ Yield x sw = concat @{Compose} (mapSnd . (::)) (mapCtx pure $ mapError Right x) (mergeCtxs' sw)
   mergeCtxs' $ Effect msw = Effect $ msw <&> pure . mapLazy (assert_total mergeCtxs')
   mergeCtxs' $ BindR x f  = BindR (mergeCtxs' x) $ \(y, ys) => let _ = Functor.Compose in mapFst (mapSnd (ys ++)) $ mergeCtxs' $ f y
-  mergeCtxs' $ BindE x h  = BindE (mergeCtxs' x) $ \case
-                              This y => mergeCtxs' $ h y
-                              That y => Fail $ That y
-                              Both y z => mapError (mapSnd (z ++)) $ mergeCtxs' $ h y
-  mergeCtxs' $ Ensure l x = mapError reorderE (Ensure (mergeCtxs' l) (mergeCtxs' x)) `BindR` \((r', rsl), (r, rsr)) => Done ((r', r), rsl ++ rsr)
-    where reorderE : forall e, e', e''. These (These e' (List1 e'')) (These e (List1 e'')) -> These (These e' e) (List1 e'')
-          reorderE $ This x = mapFst This x
-          reorderE $ That x = mapFst That x
-          reorderE $ Both (This x) z = mapFst That z
-          reorderE $ Both (That y) z = bimap That (y++) z
-          reorderE $ Both (Both x y) z = bimap (Both x) (y++) z
+  mergeCtxs' $ BindE x h  = BindE (mergeCtxs' x) $ either (mergeCtxs' . h) (Fail . Right)
+  mergeCtxs' $ Ensure l x = Ensure (mapCtx (map pure) l) (mergeCtxs' x) `BindR` \(rl, rr, rs) => succeed ((rl, rr), rs)
 
-  -- TODO to change `Monoid e` to `Semigroup e` as soon as `These.bifold` would relax its requirement.
   export
-  mergeCtxs : Applicative m => Applicative n => Monoid e => (r' -> r -> r) -> Swirl m e r (Swirl n e r' o) -> Swirl (m . n) e r o
-  mergeCtxs fr = let _ = Functor.Compose in mapFst (uncurry $ foldr fr) . mapError (bifold . mapSnd (foldl1 (<+>))) . mergeCtxs'
+  mergeCtxs : Applicative m => Applicative n => (r' -> r -> r) -> Swirl m e r (Swirl n e r' o) -> Swirl (m . n) e r o
+  mergeCtxs fr = let _ = Functor.Compose in mapFst (uncurry $ foldr fr) . mapError fromEither . mergeCtxs'
 
--- TODO to change `Monoid e` to `Semigroup e` as soon as `These.bifold` would relax its requirement.
 export
-mergeCtxs : Applicative m => Applicative n => Semigroup r => Monoid e => Swirl m e r (Swirl n e r o) -> Swirl (m . n) e r o
+mergeCtxs : Applicative m => Applicative n => Semigroup r => Swirl m e r (Swirl n e r o) -> Swirl (m . n) e r o
 mergeCtxs = mergeCtxs (<+>)
 
 namespace ComposeResults
 
-  -- So strange resulting error type is because the error can occur in the finally section along with an error in the main section.
-  -- Several suberrors may occur if is was thrown in finally sections of both main section and outer error handler.
   export
-  squashOuts' : Functor m => Swirl m e r (Swirl m e' r' o) -> Swirl m (These e $ List1 e') (r, List r') o
+  squashOuts' : Functor m => Swirl m e r (Swirl m e' r' o) -> Swirl m (Either e e') (r, List r') o
+  squashOuts' $ Done x     = Done (x, [])
+  squashOuts' $ Fail e     = Fail $ Left e
+  squashOuts' $ Yield x sw = concat (mapSnd . (::)) (mapError Right x) (squashOuts' sw)
+  squashOuts' $ Effect msw = Effect $ msw <&> mapLazy (assert_total squashOuts')
+  squashOuts' $ BindR x f  = BindR (squashOuts' x) $ \(y, ys) => mapFst (mapSnd (ys ++)) $ squashOuts' $ f y
+  squashOuts' $ BindE x h  = BindE (squashOuts' x) $ either (squashOuts' . h) (Fail . Right)
+  squashOuts' $ Ensure l x = Ensure l (squashOuts' x) `BindR` \(rl, rr, rs) => succeed ((rl, rr), rs)
 
-  -- TODO to change `Monoid e` to `Semigroup e` as soon as `These.bifold` would relax its requirement.
   export
-  squashOuts : Functor m => Monoid e => (r' -> r -> r) -> Swirl m e r (Swirl m e r' o) -> Swirl m e r o
-  squashOuts fr = mapFst (uncurry $ foldr fr) . mapError (bifold . mapSnd (foldl1 (<+>))) . squashOuts'
+  squashOuts : Functor m => (r' -> r -> r) -> Swirl m e r (Swirl m e r' o) -> Swirl m e r o
+  squashOuts fr = mapFst (uncurry $ foldr fr) . mapError fromEither . squashOuts'
 
--- TODO to change `Monoid e` to `Semigroup e` as soon as `These.bifold` would relax its requirement.
-squashOuts : Functor m => Semigroup r => Monoid e => Swirl m e r (Swirl m e r o) -> Swirl m e r o
+squashOuts : Functor m => Semigroup r => Swirl m e r (Swirl m e r o) -> Swirl m e r o
 squashOuts = squashOuts (<+>)
 
-squashRes : Functor m => Swirl m e (Swirl m e r o) o -> Swirl m e r o
---squashRes = prDY id $ \x, ys => Yield x $ assert_total squashRes ys
+squashRes : Swirl m e (Swirl m e r o) o -> Swirl m e r o
+squashRes $ Done sw = sw
+squashRes $ Fail x  = Fail x
+squashRes sw        = sw `BindR` id
 
 --- Filtration ---
 
@@ -286,9 +313,11 @@ mapEither' : Functor m =>
              (o -> Either e' o') ->
              Swirl m e r o ->
              Swirl m (Either e e') r o'
+mapEither' f = mapFst fst . squashOuts' . mapSnd (emitOrFail . f)
 
 export
 mapEither : Functor m => (o -> Either e o') -> Swirl m e r o -> Swirl m e r o'
+mapEither = mapError fromEither .: mapEither'
 
 
 {-
