@@ -174,11 +174,26 @@ f.by = Effect . map (delay . f)
 -- Output --
 
 export %inline
-emit : Functor m => Monoid r =>
+emit : Monoid r =>
        (0 _ : IfUnsolved e Void) =>
        (0 _ : IfUnsolved r ()) =>
        o -> Swirl m e r o
 emit x = Yield x $ Done neutral
+
+export
+preEmits : (0 _ : IfUnsolved e Void) =>
+           Swirl m e r o ->
+           LazyList o ->
+           Swirl m e r o
+preEmits = foldrLazy Yield . delay
+
+export
+emits : Monoid r =>
+        (0 _ : IfUnsolved e Void) =>
+        (0 _ : IfUnsolved r ()) =>
+        LazyList o ->
+        Swirl m e r o
+emits = preEmits $ Done neutral
 
 -- Result --
 
@@ -191,8 +206,7 @@ succeed = Done
 -- Error --
 
 export %inline
-fail : Functor m =>
-       (0 _ : IfUnsolved r ()) =>
+fail : (0 _ : IfUnsolved r ()) =>
        (0 _ : IfUnsolved o Void) =>
        e -> Swirl m e r o
 fail = Fail
@@ -200,19 +214,32 @@ fail = Fail
 -- Result or error --
 
 export
-succeedOrFail : Functor m =>
-                (0 _ : IfUnsolved o Void) =>
+succeedOrFail : (0 _ : IfUnsolved o Void) =>
                 Either e r -> Swirl m e r o
 succeedOrFail = either fail succeed
 
 -- Output or error --
 
 export
-emitOrFail : Functor m =>
-             Monoid r =>
+emitOrFail : Monoid r =>
              (0 _ : IfUnsolved r ()) =>
              Either e o -> Swirl m e r o
 emitOrFail = either fail emit
+
+--- Adapters ---
+
+export
+emitRes' : Functor m => (r -> r') -> Swirl m e r Void -> Swirl m e r' r
+emitRes' f $ Done x = Yield x $ Done $ f x
+emitRes' f $ Fail x = Fail x
+emitRes' f sw       = mapSnd absurd sw `BindR` \r => Yield r $ Done $ f r
+
+export %inline
+emitRes : Functor m =>
+          Monoid r =>
+          (0 _ : IfUnsolved r ()) =>
+          Swirl m e r' Void -> Swirl m e r r'
+emitRes = emitRes' $ const neutral
 
 --- Internal foldings ---
 
@@ -320,8 +347,6 @@ mapEither : Functor m => (o -> Either e o') -> Swirl m e r o -> Swirl m e r o'
 mapEither = mapError fromEither .: mapEither'
 
 
-{-
-
 export
 mapMaybe : Functor m => (o -> Maybe o') -> Swirl m e r o -> Swirl m e r o'
 mapMaybe f $ Done x     = Done x
@@ -330,8 +355,9 @@ mapMaybe f $ Yield x sw = case f x of
                             Nothing => mapMaybe f sw -- no common subexpression, tail recursion instead
                             Just y  => Yield y $ mapMaybe f sw
 mapMaybe f $ Effect msw = Effect $ msw <&> mapLazy (assert_total mapMaybe f)
-mapMaybe f $ BindR sw g = BindR (mapMaybe f sw) (assert_total mapMaybe f . g)
-mapMaybe f $ BindE sw h = BindE (mapMaybe f sw) (assert_total mapMaybe f . h)
+mapMaybe f $ BindR sw g = BindR (mapMaybe f sw) (mapMaybe f . g)
+mapMaybe f $ BindE sw h = BindE (mapMaybe f sw) (mapMaybe f . h)
+mapMaybe f $ Ensure l x = Ensure l (mapMaybe f x)
 
 export
 filter : Functor m => (a -> Bool) -> Swirl m e r a -> Swirl m e r a
@@ -341,8 +367,9 @@ filter f $ Yield x sw = case f x of
                           False => filter f sw -- no common subexpression, tail recursion instead
                           True  => Yield x $ filter f sw
 filter f $ Effect msw = Effect $ msw <&> mapLazy (assert_total filter f)
-filter f $ BindR sw g = BindR (filter f sw) (assert_total filter f . g)
-filter f $ BindE sw h = BindE (filter f sw) (assert_total filter f . h)
+filter f $ BindR sw g = BindR (filter f sw) (filter f . g)
+filter f $ BindE sw h = BindE (filter f sw) (filter f . h)
+filter f $ Ensure l x = Ensure l (filter f x)
 
 --- Interleaving ---
 
@@ -363,17 +390,17 @@ namespace ComposeResults
 
 -- Implementations over the last type argument --
 
-export
+export %inline
 Functor m => Functor (Swirl m e r) where
   map = mapSnd
 
 export
-Monoid r => Functor m => Applicative (Swirl m e r) where
+Functor m => Monoid r => Applicative (Swirl m e r) where
   pure x = Yield x $ Done neutral
   fs <*> xs = squashOuts $ fs <&> flip map xs
 
 export
-Monoid r => Functor m => Monad (Swirl m e r) where
+Functor m => Monoid r => Monad (Swirl m e r) where
   join = squashOuts
 
 export
@@ -413,31 +440,43 @@ handleError = flip $ BindE . delay
 
 --- Finally funning ---
 
-elimTheseVoid : These e Void -> e
-elimTheseVoid $ This x = x
+export
+withFinally' : Functor m => Swirl m Void r' Void -> Swirl m e r o -> Swirl m e (r', r) o
+withFinally' l x = Ensure l x
 
 export
-withFinally' : Functor m => Swirl m e' () o -> Swirl m e r o -> Swirl m (These e e') r o
-
-export
-withFinally : Functor m => Swirl m Void () o -> Swirl m e r o -> Swirl m e r o
-withFinally = mapError elimTheseVoid .: withFinally'
+withFinally : Functor m => Swirl m Void () Void -> Swirl m e r o -> Swirl m e r o
+withFinally = mapFst snd .: withFinally'
 
 export
 bracket' : Functor m =>
+           (0 _ : IfUnsolved e Void) =>
+           (0 _ : IfUnsolved o Void) =>
            (init : Swirl m e res o) ->
-           (cleanup : res -> Swirl m e' () o) ->
+           (cleanup : res -> Swirl m Void r' Void) ->
            (action : res -> Swirl m e r o) ->
-           Swirl m (These e e') r o
-bracket' init cleanup action = (mapError This init >>= \res => withFinally' (cleanup res) (action res)) @{ByResult}
+           Swirl m e (r', r) o
+bracket' init cleanup action = (init >>= \res => withFinally' (cleanup res) (action res)) @{ByResult}
 
 export
 bracket : Functor m =>
+          (0 _ : IfUnsolved e Void) =>
+          (0 _ : IfUnsolved o Void) =>
           (init : Swirl m e res o) ->
-          (cleanup : res -> Swirl m Void () o) ->
+          (cleanup : res -> Swirl m Void () Void) ->
           (action : res -> Swirl m e r o) ->
           Swirl m e r o
-bracket init = mapError elimTheseVoid .: bracket' init
+bracket init cleanup action = (init >>= \res => withFinally (cleanup res) (action res)) @{ByResult}
+
+export
+bracketO : Functor m =>
+           Monoid r =>
+           (0 _ : IfUnsolved e Void) =>
+           (0 _ : IfUnsolved r ()) =>
+           (init : Swirl m e res Void) ->
+           (cleanup : res -> Swirl m Void r Void) ->
+           Swirl m e r res
+bracketO init cleanup = bimap fst snd $ emitRes' id $ bracket' init cleanup succeed
 
 --- Processes ---
 
@@ -459,59 +498,103 @@ tickUntil sw@(Done False) = Yield () $ tickUntil sw
 tickUntil $ Fail e        = Fail e
 tickUntil sw = (map absurd sw >>= \stop => if stop then succeed neutral else Yield () $ tickUntil sw) @{ByResult}
 
---- Adapters ---
+--- Cutting outputs ---
+
+take' : Functor m => Nat -> Swirl m e r o -> Swirl m (Nat, e) (Nat, r) o
+take' Z     sw           = mapError (Z,) $ mapFst (Z,) $ forgetO sw
+take' (S k) $ Yield x sw = Yield x $ take' k sw
+take' n     $ Done x     = Done (n, x)
+take' n     $ Fail e     = Fail (n, e)
+take' n     $ Effect msw = Effect $ msw <&> mapLazy (assert_total take' n)
+take' n     $ BindR x f  = BindR (take' n x) $ \(n', r') => take' n' $ f r'
+take' n     $ BindE x h  = BindE (take' n x) $ \(n', e') => take' n' $ h e'
+take' n     $ Ensure l x = Ensure l (take' n x) `BindR` \(r', n', r) => Done (n, r', r)
 
 export
-emitRes : Functor m =>
-          Monoid r =>
-          (0 _ : IfUnsolved r ()) =>
-          Swirl m e r' Void -> Swirl m e r r'
-emitRes $ Done x     = Yield x $ Done neutral
-emitRes $ Fail x     = Fail x
-emitRes $ Effect msw = Effect $ msw <&> mapLazy (assert_total emitRes)
-emitRes $ BindR x g  = BindR (map absurd x) (assert_total emitRes . g)
-emitRes $ BindE x h  = BindE (emitRes x) (assert_total emitRes . h)
+take : Functor m => Nat -> Swirl m e r o -> Swirl m e r o
+take = mapError snd .: mapFst snd .: take'
 
---- Cutting ---
+-- Additional bool parameter's semantics is roughtly the last value returned by the condition function
+%inline %tcinline
+twCont : Functor m =>
+         Bool ->
+         (succMap : Lazy (Swirl m (Bool, e) (Bool, r) o) -> Swirl m (Bool, e) (Bool, r) o) ->
+         (o -> Bool) ->
+         Swirl m e r o ->
+         Swirl m (Bool, e) (Bool, r) o
+takeWhile' : Functor m => (o -> Bool) -> Swirl m e r o -> Swirl m (Bool, e) (Bool, r) o
+takeWhile' _ $ Done x     = Done (True, x)
+takeWhile' _ $ Fail e     = Fail (True, e)
+takeWhile' w $ Yield x sw = twCont (w x) (Yield x) w sw
+takeWhile' w $ Effect msw = Effect $ msw <&> mapLazy (assert_total takeWhile' w)
+takeWhile' w $ BindR x f  = BindR (takeWhile' w x) $ \(ct, r') => twCont ct force w $ f r'
+takeWhile' w $ BindE x h  = BindE (takeWhile' w x) $ \(ct, e') => twCont ct force w $ h e'
+takeWhile' w $ Ensure l x = Ensure l (takeWhile' w x) `BindR` \(r', b', r) => Done (b', r', r)
+twCont False s _ sw = mapError (False,) $ mapFst (False,) $ forgetO sw
+twCont True  s w sw = s $ delay $ takeWhile' w sw
 
 export
-take' : Functor m => Nat -> Swirl m e r o -> Swirl m e (Maybe r) o
+takeWhile : Functor m => (o -> Bool) -> Swirl m e r o -> Swirl m e r o
+takeWhile = mapError snd .: mapFst snd .: takeWhile'
 
-export
-takeWhile' : Functor m => (o -> Bool) -> Swirl m e r o -> Swirl m e (Maybe r) o
-
-export
-take : Functor m => Monoid r => Nat -> Swirl m e r o -> Swirl m e r o
-take = mapFst (fromMaybe neutral) .: take'
-
-export
-takeWhile : Functor m => Monoid r => (o -> Bool) -> Swirl m e r o -> Swirl m e r o
-takeWhile = mapFst (fromMaybe neutral) .: takeWhile'
+drop' : Functor m => Nat -> Swirl m e r o -> Swirl m (Nat, e) (Nat, r) o
+drop' Z     sw           = mapError (Z,) $ mapFst (Z,) sw
+drop' (S k) $ Yield x sw = drop' k sw
+drop' n     $ Done x     = Done (n, x)
+drop' n     $ Fail e     = Fail (n, e)
+drop' n     $ Effect msw = Effect $ msw <&> mapLazy (assert_total drop' n)
+drop' n     $ BindR x f  = BindR (drop' n x) $ \(n', r') => drop' n' $ f r'
+drop' n     $ BindE x h  = BindE (drop' n x) $ \(n', e') => drop' n' $ h e'
+drop' n     $ Ensure l x = Ensure l (drop' n x) `BindR` \(r', n', r) => Done (n, r', r)
 
 export
 drop : Functor m => Nat -> Swirl m e r o -> Swirl m e r o
+drop = mapError snd .: mapFst snd .: drop'
+
+-- Additional bool parameter's semantics is roughtly the last value returned by the condition function
+%inline %tcinline
+dwCont : Functor m =>
+         Bool ->
+         (succMap : Lazy (Swirl m e r o) -> Swirl m e r o) ->
+         (o -> Bool) ->
+         Swirl m e r o ->
+         Swirl m (Bool, e) (Bool, r) o
+dropWhile' : Functor m => (o -> Bool) -> Swirl m e r o -> Swirl m (Bool, e) (Bool, r) o
+dwCont True  s w sw = dropWhile' w sw
+dwCont False s _ sw = mapError (False,) $ mapFst (False,) $ s sw
+dropWhile' _ $ Done x     = Done (True, x)
+dropWhile' _ $ Fail e     = Fail (True, e)
+dropWhile' w $ Yield x sw = dwCont (w x) (Yield x) w sw
+dropWhile' w $ Effect msw = Effect $ msw <&> mapLazy (assert_total dropWhile' w)
+dropWhile' w $ BindR x f  = BindR (dropWhile' w x) $ \(ct, r') => dwCont ct force w $ f r'
+dropWhile' w $ BindE x h  = BindE (dropWhile' w x) $ \(ct, e') => dwCont ct force w $ h e'
+dropWhile' w $ Ensure l x = Ensure l (dropWhile' w x) `BindR` \(r', b', r) => Done (b', r', r)
 
 export
 dropWhile : Functor m => (o -> Bool) -> Swirl m e r o -> Swirl m e r o
+dropWhile = mapError snd .: mapFst snd .: dropWhile'
 
 --- Extension ---
 
-namespace ComposeResults
+intersperseOuts' : Functor m => (sep : Swirl m e () o) -> Swirl m e r o -> Swirl m (Bool, e) (Bool, r) o
+%inline prepO : Functor m => Bool -> (sep : Swirl m e () o) -> Swirl m e r o -> Swirl m (Bool, e) (Bool, r) o
+prepO True  sep sw = mapError (True,) $ mapFst (True,) $ squashOuts (const id) $ map (\x' => concat const sep $ emit x') sw
+prepO False sep sw = intersperseOuts' sep sw
+intersperseOuts' sep $ Done x     = Done (False, x)
+intersperseOuts' sep $ Fail e     = Fail (False, e)
+intersperseOuts' sep $ Yield x sw = Yield x $ prepO True sep sw
+intersperseOuts' sep $ Effect msw = Effect $ msw <&> mapLazy (assert_total intersperseOuts' sep)
+intersperseOuts' sep $ BindR x f  = BindR (intersperseOuts' sep x) $ \(fwas, r') => prepO fwas sep $ f r'
+-- CAUTION! the following `assert_total` has no clear evidence of being valid
+intersperseOuts' sep $ BindE x h  = BindE (assert_total intersperseOuts' (mapError Right sep) (mapError Left x)) $ \(fwas, ee) =>
+                                      case ee of
+                                        Left e' => prepO fwas sep $ h e'
+                                        Right e => Fail (fwas, e)
+intersperseOuts' sep $ Ensure l x = Ensure l (intersperseOuts' sep x) `BindR` \(r', b, r) => Done (b, r', r)
 
-  -- Effects of the separator happen before the next yield of an output
-  export
-  intersperseOuts : Functor m => (r' -> r -> r) -> (sep : Swirl m e r' o) -> Swirl m e r o -> Swirl m e r o
-  --intersperseOuts fr sep = prY $ \x, ys => Yield x $ assert_total flip wriggleOuts ys $ \o, cont =>
-  --  flip mapFst sep $ \r' => Yield o $ mapFst (fr r') cont
-
--- Ignores the result of `sep`, the same as `ComposeResults.intersperseOuts (const id)`, but slighly more effective
 export
-intersperseOuts' : Functor m => (sep : Swirl m e () o) -> Swirl m e r o -> Swirl m e r o
-intersperseOuts' = intersperseOuts $ const id
-
-export
-intersperseOuts : Functor m => Semigroup r => (sep : Swirl m e r o) -> Swirl m e r o -> Swirl m e r o
-intersperseOuts = intersperseOuts (<+>)
+intersperseOuts : Functor m => (sep : Swirl m e () o) -> Swirl m e r o -> Swirl m e r o
+intersperseOuts = mapError snd .: mapFst snd .: intersperseOuts'
 
 --- Eliminators ---
 
@@ -521,7 +604,9 @@ intersperseOuts = intersperseOuts (<+>)
 --toLazyList $ Yield x sw = x :: toLazyList sw
 --toLazyList $ Effect msw = assert_total toLazyList $ runIdentity msw
 --toLazyList $ BindR x f  = ?toLazyList_rhs_4
---toLazyList $ BindE x f  = ?toLazyList_rhs_5
+--toLazyList $ BindE x h  = ?toLazyList_rhs_5
+
+{-
 
 namespace NoTailRec
 
