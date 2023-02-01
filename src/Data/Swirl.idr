@@ -326,10 +326,15 @@ squashOuts' = mapFst fst . squashOuts' (const id) ()
 squashOuts : Functor m => Semigroup r => Swirl m e r (Swirl m e r o) -> Swirl m e r o
 squashOuts = mapFst mergeSemi . mapError fromEither . squashOuts' (\a, x => (a <+> Just x) @{Deep}) Nothing
 
+-- Unlike the `BindR` constuctor, this function is significantly not lazy on its first argument.
+%inline
+bindR : Swirl m e r' o -> (r' -> Swirl m e r o) -> Swirl m e r o
+bindR (Done x) f = f x
+bindR (Fail e) _ = Fail e
+bindR sw       f = BindR sw f
+
 squashRes : Swirl m e (Swirl m e r o) o -> Swirl m e r o
-squashRes $ Done sw = sw
-squashRes $ Fail x  = Fail x
-squashRes sw        = sw `BindR` id
+squashRes sw = sw `bindR` id
 
 --- Filtration ---
 
@@ -424,7 +429,7 @@ namespace Applicative
   [ByResult] Functor m => Applicative (\r => Swirl m e r o)
     using Functor.ByResult where
       pure = Done
-      fs <*> xs = squashRes $ map @{ByResult} (flip (map @{ByResult}) xs) fs
+      fs <*> xs = fs `bindR` (`mapFst` xs)
 
 namespace Monad
 
@@ -432,7 +437,7 @@ namespace Monad
   [ByResult] Functor m => Monad (\r => Swirl m e r o)
     using Applicative.ByResult where
       join = squashRes
-      x >>= f = join @{ByResult} $ map @{ByResult} f x
+      (>>=) = bindR
 
 --- Error handling ---
 
@@ -459,7 +464,7 @@ bracket' : Functor m =>
            (cleanup : res -> Swirl m Void r' Void) ->
            (action : res -> Swirl m e r o) ->
            Swirl m e (r', r) o
-bracket' init cleanup action = (init >>= \res => withFinally' (cleanup res) (action res)) @{ByResult}
+bracket' init cleanup action = init `bindR` \res => withFinally' (cleanup res) (action res)
 
 export
 bracket : Functor m =>
@@ -469,7 +474,7 @@ bracket : Functor m =>
           (cleanup : res -> Swirl m Void () Void) ->
           (action : res -> Swirl m e r o) ->
           Swirl m e r o
-bracket init cleanup action = (init >>= \res => withFinally (cleanup res) (action res)) @{ByResult}
+bracket init cleanup action = init `bindR` \res => withFinally (cleanup res) (action res)
 
 export
 bracketO : Functor m =>
@@ -499,7 +504,7 @@ tickUntil : Functor m =>
 tickUntil $ Done True     = Done neutral
 tickUntil sw@(Done False) = Yield () $ tickUntil sw
 tickUntil $ Fail e        = Fail e
-tickUntil sw = (map absurd sw >>= \stop => if stop then succeed neutral else Yield () $ tickUntil sw) @{ByResult}
+tickUntil sw = map absurd sw `bindR` \stop => if stop then succeed neutral else Yield () $ tickUntil sw
 
 --- Cutting outputs ---
 
