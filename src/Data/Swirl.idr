@@ -62,6 +62,11 @@ data Swirl : (Type -> Type) -> (error, result, output : Type) -> Type where
 --   This may lead a nessesity to use finally sections in finally sections which emit values, which all looks fragile.
 --
 --   That all lead to a decision of inability to fail for the "finally" action.
+--
+-- - `Ensure` constructor, its return type.
+--
+--   Resulting error type of the contructor could be `(r', e)`, to emphasize that finally section always executes,
+--   Thus always returning `r'` in both channels.
 
 %inline %tcinline
 mapLazy : (a -> b) -> Lazy a -> Lazy b
@@ -600,6 +605,39 @@ export
 intersperseOuts : Functor m => (sep : Swirl m e () o) -> Swirl m e r o -> Swirl m e r o
 intersperseOuts = mapError snd .: mapFst snd .: intersperseOuts'
 
+--- Well-foundness ---
+
+data LT : Lazy (Swirl m e r o) -> Lazy (Swirl m e' r' o') -> Type where
+  YLT : sw `LT` Yield x sw
+  --ELT : (msw = pure sw) -> LT {m} sw $ Effect msw
+  BR1 : sw `LT` BindR sw f
+  BR2 : (r : _) -> {sw : _} -> f r `LT` BindR sw f
+  BE1 : sw `LT` BindE sw h
+  BE2 : (e : _) -> {sw : _} -> h e `LT` BindE sw h
+  En1 : sw `LT` Ensure sw sv
+  En2 : sv `LT` Ensure sw sv
+
+[WFL] WellFounded (Lazy (Swirl m e r o)) LT where
+  wellFounded $ Done x     = Access $ \_ => \case YLT impossible
+  wellFounded $ Fail x     = Access $ \_ => \case YLT impossible
+  wellFounded $ Yield x sw = Access $ \_, YLT => wellFounded sw
+  wellFounded $ Effect msw = Access $ \_ => \case YLT impossible -- => wellFounded $ assert_smaller msw sv
+  wellFounded $ BindR x f  = Access $ \_ => \case
+                                        BR1 => wellFounded x
+                                        BR2 r => wellFounded $ f r
+  wellFounded $ BindE x h  = Access $ \_ => \case
+                                        BE1 => wellFounded x
+                                        BE2 e => wellFounded $ h e
+  wellFounded $ Ensure l x = Access $ \_ => \case En1 impossible
+
+LT' : Swirl m e r o -> Swirl m e' r' o' -> Type
+LT' sw sv = LT sw sv
+
+WellFounded (Swirl m e r o) LT' where
+  wellFounded sw = adaptAccs $ wellFounded @{WFL} sw where
+    %inline adaptAccs : forall sw. Accessible LT (delay sw) -> Accessible LT' sw
+    adaptAccs $ Access f = Access $ \y, lt => adaptAccs $ f y lt
+
 --- Eliminators ---
 
 --export
@@ -610,29 +648,46 @@ intersperseOuts = mapError snd .: mapFst snd .: intersperseOuts'
 --toLazyList $ BindR x f  = ?toLazyList_rhs_4
 --toLazyList $ BindE x h  = ?toLazyList_rhs_5
 
-{-
+export
+[NoTailRec] Monad m => MonadRec m where
+  tailRecM s acc (Access ac) f = f s acc >>= \case
+    Cont s' prf st' => tailRecM s' st' (ac s' prf) f
+    Done vres       => pure vres
 
-namespace NoTailRec
+data Ctx : (Type -> Type) -> (inE, inR, outE, outR : Type) -> Type where
+  Nil : Ctx m e r e r
+  BiR : (r' -> Swirl m e r Void) -> Ctx m e r e0 r0 -> Ctx m e r' e0 r0
+  BiE : (e' -> Swirl m e r Void) -> Ctx m e r e0 r0 -> Ctx m e' r e0 r0
+  Ens : Swirl m Void r' Void -> Ctx m e (r', r) e0 r0 -> Ctx m e r e0 r0
 
-  export
-  result : Monad m => Swirl m e a Void -> m $ Either e a
---  result $ Done x    = pure x
---  result $ Effect xs = xs >>= assert_total result . force
+data St : (Type -> Type) -> (finalE, finalR : Type) -> Type where
+  AtCtx : Swirl m e' r' Void -> Ctx m e' r' e r -> St m e r
 
-  export
-  result' : Monad m => Swirl m Void a Void -> m a
+data Rel : St m e r -> St m e r -> Type
 
-namespace TailRec
+WellFounded (St m e r) Rel where
+  wellFounded = ?wellFounded_st
 
-  covering
-  WellFounded () Equal where
-    wellFounded () = Access $ \(), Refl => wellFounded ()
+export
+result : MonadRec m => Swirl m e r Void -> m $ Either e r
+result sw = tailRecM {rel=Rel} (sw `AtCtx` []) () (wellFounded _) $ \sw, () => case sw of
 
-  export covering
-  result : MonadRec m => Swirl m e a Void -> m $ Either e a
---  result sw = tailRecM () sw (wellFounded ()) $ \wf => \case
---    Done x    => pure $ Done x
---    Effect xs => Cont wf Refl . force <$> xs
+  Done x `AtCtx` []        => pure $ Done $ Right x
+  Done x `AtCtx` BiR f ct  => pure $ Cont (f x `AtCtx` ct) ?rel_done_bir ()
+  Done x `AtCtx` BiE _ ct  => pure $ Cont (Done x `AtCtx` ct) ?rel_done_bie ()
+  Done x `AtCtx` Ens sv ct => pure $ Cont ((mapError absurd $ mapFst (,x) $ sv) `AtCtx` ct) ?rel_done_ens ()
 
-  export covering
-  result' : MonadRec m => Swirl m Void a Void -> m a
+  Fail e `AtCtx` []        => pure $ Done $ Left e
+  Fail e `AtCtx` BiR _ ct  => pure $ Cont (Fail e `AtCtx` ct) ?rel_fail_bir ()
+  Fail e `AtCtx` BiE h ct  => pure $ Cont (h e `AtCtx` ct) ?rel_fail_bie ()
+  Fail e `AtCtx` Ens sv ct => pure $ Cont ((mapError absurd (forgetR sv) `andThen` Fail e) `AtCtx` ct) ?rel_fail_ens ()
+
+  Effect msw `AtCtx` ct => msw <&> \sw => Cont (sw `AtCtx` ct) ?rel_effect ()
+
+  BindR sw f  `AtCtx` ct => pure $ Cont (sw `AtCtx` BiR f ct) ?rel_bindr ()
+  BindE sw h  `AtCtx` ct => pure $ Cont (sw `AtCtx` BiE h ct) ?rel_binde ()
+  Ensure l sw `AtCtx` ct => pure $ Cont (sw `AtCtx` Ens l ct) ?rel_ensure ()
+
+export
+result' : MonadRec m => Swirl m Void a Void -> m a
+result' = map (\(Right x) => x) . result
