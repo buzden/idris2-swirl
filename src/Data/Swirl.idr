@@ -264,23 +264,23 @@ namespace ToResult
 
 namespace ToOutput
 
-  export
-  foldlO : Functor m => (o' -> o -> o') -> o' -> Swirl m e r o -> Swirl m e r o'
-  foldlO op init $ Done x     = Done x
-  foldlO op init $ Fail e     = Fail e
-  foldlO op init $ Yield x sw = foldlO op (init `op` x) sw
-  foldlO op init $ Effect msw = Effect $ msw <&> mapLazy (assert_total foldlO op init)
-  foldlO op init $ BindR x f  = BindR (foldlO op init x) (foldlO op init . f)
-  foldlO op init $ BindE x h  = BindE (foldlO op init x) (foldlO op init . h)
-  foldlO op init $ Ensure l x = Ensure l (foldlO op init x)
-
-  export
-  foldO : Functor m => Monoid o => Swirl m e r o -> Swirl m e r o
-  foldO = foldlO (<+>) neutral
-
-  export
-  outputs : Functor m => Swirl m e r o -> Swirl m e r (SnocList o)
-  outputs = foldlO (:<) [<]
+--  export
+--  foldlO : Functor m => (o' -> o -> o') -> o' -> Swirl m e r o -> Swirl m e r o'
+--  foldlO op init $ Done x     = Yield init $ Done x
+--  foldlO op init $ Fail e     = Fail e -- should we yield a value before failing?
+--  foldlO op init $ Yield x sw = foldlO op (init `op` x) sw
+--  foldlO op init $ Effect msw = Effect $ msw <&> mapLazy (assert_total foldlO op init)
+--  foldlO op init $ BindR x f  = BindR (foldlO op init x) (foldlO op init . f) -- TODO may result to several yields!
+--  foldlO op init $ BindE x h  = BindE (foldlO op init x) (foldlO op init . h)
+--  foldlO op init $ Ensure l x = Ensure l (foldlO op init x)
+--
+--  export
+--  foldO : Functor m => Monoid o => Swirl m e r o -> Swirl m e r o
+--  foldO = foldlO (<+>) neutral
+--
+--  export
+--  outputs : Functor m => Swirl m e r o -> Swirl m e r (SnocList o)
+--  outputs = foldlO (:<) [<]
 
 --- Flattenings ---
 
