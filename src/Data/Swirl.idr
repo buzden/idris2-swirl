@@ -306,10 +306,6 @@ mergeCtxs = (`BindR` Done . mergeSemi) . mapError fromEither . mergeCtxs' (\a, x
 
 namespace ComposeResults
 
-  -- TODO The following function stores the results of the whole process as its result
-  --      with no intemediate joining, which must be uneffective and should be redone.
-  --      The same applies to the `mergeCtxs'` above.
-
   export
   squashOuts' : Functor m => (r'' -> r' -> r'') -> r'' -> Swirl m e r (Swirl m e' r' o) -> Swirl m (Either e e') (r, r'') o
   squashOuts' ff fi $ Done x     = Done (x, fi)
