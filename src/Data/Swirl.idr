@@ -99,9 +99,6 @@ mapError f $ Done x     = Done x
 mapError f $ Fail x     = Fail $ f x
 mapError f $ BindE x h  = BindE x (mapError f . h)
 mapError f sw           = BindE sw (Fail . f)
---mapError f $ Yield x sw = Yield x $ mapError f sw
---mapError f $ Effect msw   = Effect $ msw <&> mapLazy (assert_total mapError f)
---mapError f $ BindR x g    = BindR (mapError f x) (mapError f . g)
 
 --- Basic combinators ---
 
@@ -118,12 +115,6 @@ namespace ComposeResults
   concat fr (Done x) sv = mapFst (fr x) sv
   concat fr (Fail x) sv = Fail x
   concat fr sw       sv = BindR sw $ \x => mapFst (fr x) sv
---  concat fr (Yield x sw) sv = Yield x $ concat fr sw sv
---  concat fr (Effect msw) sv = Effect $ msw <&> mapLazy (\sw => assert_total concat fr sw sv)
---  concat fr (BindR x f)  sv = BindR x $ (\sw => assert_total concat fr sw sv) . f
---  concat fr (BindE x h)  sv = BindE (assert_total $ concat fr (mapError Left x) (mapError Right sv)) $ \case
---                                Right e => Fail e -- error from the rhs of concat, rethrow
---                                Left e  => concat fr (h e) sv -- error on the lhs of concat, concat with handler
 
 export %inline
 (++) : Functor m => Semigroup r => Swirl m e r o -> Lazy (Swirl m e r o) -> Swirl m e r o
@@ -157,11 +148,6 @@ forgetR : Functor m => Monoid r => (0 _ : IfUnsolved r ()) => Swirl m e r' a -> 
 forgetR $ Done x = Done neutral
 forgetR $ Fail e = Fail e
 forgetR sw       = BindR sw $ const $ Done neutral
---forgetR $ Yield x sw = Yield x $ forgetR sw
---forgetR $ Effect msw = Effect $ msw <&> mapLazy (assert_total forgetR)
---forgetR $ BindR sw g = BindR sw (forgetR . g)
---forgetR $ BindE sw h = BindE (forgetR sw) (forgetR . h)
---forgetR $ Ensure l x = Ensure l $ forgetR x
 
 --- Basic creation ---
 
@@ -243,47 +229,58 @@ emitRes = emitRes' $ const neutral
 
 --- Internal foldings ---
 
---namespace ToResult
---
---  export
---  foldResOutsBy : Functor m => (0 _ : IfUnsolved o Void) => (a -> b -> b) -> Swirl m b a -> Swirl m b o
---  foldResOutsBy f = prY $ \x, ys => assert_total foldResOutsBy f $ mapFst (f x) ys
---
---  export
---  foldResOuts : Semigroup a => Functor m => (0 _ : IfUnsolved o Void) => Swirl m a a -> Swirl m a o
---  foldResOuts = foldResOutsBy (<+>)
---
---  export
---  foldOutsBy : Functor m =>
---               (0 _ : IfUnsolved o Void) => (0 _ : IfUnsolved r ()) =>
---               (a -> b -> b) -> b -> Swirl m r a -> Swirl m b o
---  foldOutsBy f x = foldResOutsBy f . mapFst (const x)
---
---  export
---  foldOuts : Monoid a => Functor m =>
---             (0 _ : IfUnsolved o Void) => (0 _ : IfUnsolved r ()) =>
---             Swirl m r a -> Swirl m a o
---  foldOuts = foldResOuts . mapFst (const neutral)
---
---  export
---  outputs : Functor m =>
---            (0 _ : IfUnsolved o Void) => (0 _ : IfUnsolved r ()) =>
---            Swirl m r a -> Swirl m (List a) o
---  outputs = foldOutsBy (::) []
---
---namespace ToOutput
---
---  export
---  foldOutsBy : Functor m => (b -> a -> b) -> b -> Swirl m r a -> Swirl m r b
---  foldOutsBy f init = prDY (\x => Yield init $ Done x) $ \x, cont => assert_total foldOutsBy f (f init x) cont
---
---  export
---  foldOuts : Functor m => Monoid a => Swirl m r a -> Swirl m r a
---  foldOuts = foldOutsBy (<+>) neutral
---
---  export
---  outputs : Functor m => Swirl m r o -> Swirl m r (SnocList o)
---  outputs = foldOutsBy (:<) [<]
+namespace ToResult
+
+  export
+  foldrRO : Functor m => (0 _ : IfUnsolved o' Void) => (o -> r -> r) -> Swirl m e r o -> Swirl m e r o'
+
+  export
+  foldRO : Functor m => Semigroup o => (0 _ : IfUnsolved o' Void) => Swirl m e o o -> Swirl m e o o'
+  foldRO = foldrRO (<+>)
+
+  export
+  foldrO : Functor m =>
+           (0 _ : IfUnsolved o' Void) =>
+           (o -> r -> r) ->
+           r ->
+           Swirl m e () o ->
+           Swirl m e r o'
+  foldrO f x = foldrRO f . mapFst (const x)
+
+  export
+  foldO : Functor m =>
+          Monoid o =>
+          (0 _ : IfUnsolved o' Void) =>
+          Swirl m e () o ->
+          Swirl m e o o'
+  foldO = foldRO . mapFst (const neutral)
+
+  export
+  outputs : Functor m =>
+            (0 _ : IfUnsolved o' Void) =>
+            Swirl m e () o ->
+            Swirl m e (List o) o'
+  outputs = foldrO (::) []
+
+namespace ToOutput
+
+  export
+  foldlO : Functor m => (o' -> o -> o') -> o' -> Swirl m e r o -> Swirl m e r o'
+  foldlO op init $ Done x     = Done x
+  foldlO op init $ Fail e     = Fail e
+  foldlO op init $ Yield x sw = foldlO op (init `op` x) sw
+  foldlO op init $ Effect msw = Effect $ msw <&> mapLazy (assert_total foldlO op init)
+  foldlO op init $ BindR x f  = BindR (foldlO op init x) (foldlO op init . f)
+  foldlO op init $ BindE x h  = BindE (foldlO op init x) (foldlO op init . h)
+  foldlO op init $ Ensure l x = Ensure l (foldlO op init x)
+
+  export
+  foldO : Functor m => Monoid o => Swirl m e r o -> Swirl m e r o
+  foldO = foldlO (<+>) neutral
+
+  export
+  outputs : Functor m => Swirl m e r o -> Swirl m e r (SnocList o)
+  outputs = foldlO (:<) [<]
 
 --- Flattenings ---
 
@@ -308,6 +305,10 @@ mergeCtxs : Applicative m => Applicative n => Semigroup r => Swirl m e r (Swirl 
 mergeCtxs = mergeCtxs (<+>)
 
 namespace ComposeResults
+
+  -- TODO The following function stores the results of the whole process as its result
+  --      with no intemediate joining, which must be uneffective and should be redone.
+  --      The same applies to the `mergeCtxs'` above.
 
   export
   squashOuts' : Functor m => Swirl m e r (Swirl m e' r' o) -> Swirl m (Either e e') (r, List r') o
@@ -375,16 +376,19 @@ filter f $ Ensure l x = Ensure l (filter f x)
 
 namespace ComposeResults
 
-  export
-  interleave : Applicative m => (resultComp : rl -> rr -> r) -> Swirl m e rl o -> Swirl m e rr o -> Swirl m e r o
---  interleave fr (Done x) ys = mapFst (fr x) ys
---  interleave fr xs (Done y) = mapFst (`fr` y) xs
---  interleave fr (Yield x xs)  (Yield y ys) = Yield x $ Yield y $ interleave fr xs ys
---  interleave fr (Yield x xs)  (Effect ys)  = Yield x $ Effect $ ys <&> mapLazy (interleave fr xs)
---  interleave fr e@(Effect xs) (Yield x ys) = Effect $ xs <&> mapLazy (\xs => interleave fr (assert_smaller e xs) ys)
---  interleave fr e@(Effect xs) (Effect ys)  = Effect [| f xs ys |] where
---    %inline f : Lazy (Swirl m rl o) -> Lazy (Swirl m rr o) -> Lazy (Swirl m r o)
---    f x y = interleave fr (assert_smaller e x) y
+--  mirrorAll : Functor m => Swirl m (Either e e') (r, r') (Either o o') -> Swirl m (Either e' e) (r', r) (Either o' o)
+--  mirrorAll = mapError mirror . bimap swap mirror
+--
+--  ||| Interleaves both output emits and effects of both streams
+--  export
+--  interleaveOE : Functor m => Swirl m e r o -> Swirl m e' r' o' -> Swirl m (Either e e') (r, r') (Either o o')
+--  interleaveOE (Done x)     sv = mapError Right $ bimap (x,) Right sv
+--  interleaveOE (Fail e)     sv = Fail $ Left e -- maybe, try to continue as much as possible?
+--  interleaveOE (Yield x sw) sv = Yield (Left x) $ mirrorAll $ interleaveOE {m} sv sw
+--  interleaveOE (Effect msw) sv = Effect $ msw <&> mapLazy (\sw => mirrorAll $ assert_total $ interleaveOE sv sw)
+--  interleaveOE (BindR x f)  sv = ?interleave'_rhs_4
+--  interleaveOE (BindE x h)  sv = ?interleave'_rhs_5
+--  interleaveOE (Ensure l x) sv = ?interleave'_rhs_6
 
 --- Functor, Applicative, Monad ---
 
