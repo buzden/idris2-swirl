@@ -284,25 +284,25 @@ namespace ToOutput
 
 --- Flattenings ---
 
+mergeSemi : Semigroup r => (r, Maybe r) -> r
+mergeSemi (x, Nothing) = x
+mergeSemi (x, Just y)  = x <+> y
+
 namespace ComposeResults
 
   export
-  mergeCtxs' : Applicative m => Applicative n => Swirl m e r (Swirl n e'' r'' o) -> Swirl (m . n) (Either e e'') (r, List r'') o
-  mergeCtxs' $ Done x     = Done (x, [])
-  mergeCtxs' $ Fail e     = Fail $ Left e
-  mergeCtxs' $ Yield x sw = concat @{Compose} (mapSnd . (::)) (mapCtx pure $ mapError Right x) (mergeCtxs' sw)
-  mergeCtxs' $ Effect msw = Effect $ msw <&> pure . mapLazy (assert_total mergeCtxs')
-  mergeCtxs' $ BindR x f  = BindR (mergeCtxs' x) $ \(y, ys) => let _ = Functor.Compose in mapFst (mapSnd (ys ++)) $ mergeCtxs' $ f y
-  mergeCtxs' $ BindE x h  = BindE (mergeCtxs' x) $ either (mergeCtxs' . h) (Fail . Right)
-  mergeCtxs' $ Ensure l x = Ensure (mapCtx (map pure) l) (mergeCtxs' x) `BindR` \(rl, rr, rs) => succeed ((rl, rr), rs)
-
-  export
-  mergeCtxs : Applicative m => Applicative n => (r' -> r -> r) -> Swirl m e r (Swirl n e r' o) -> Swirl (m . n) e r o
-  mergeCtxs fr = let _ = Functor.Compose in mapFst (uncurry $ foldr fr) . mapError fromEither . mergeCtxs'
+  mergeCtxs' : Applicative m => Applicative n => (r'' -> r' -> r'') -> r'' -> Swirl m e r (Swirl n e' r' o) -> Swirl (m . n) (Either e e') (r, r'') o
+  mergeCtxs' ff fi $ Done x     = Done (x, fi)
+  mergeCtxs' ff fi $ Fail e     = Fail $ Left e
+  mergeCtxs' ff fi $ Yield x sw = mapCtx pure (mapError Right x) `BindR` \lr => mergeCtxs' ff (fi `ff` lr) sw
+  mergeCtxs' ff fi $ Effect msw = Effect $ msw <&> pure . mapLazy (assert_total mergeCtxs' ff fi)
+  mergeCtxs' ff fi $ BindR x f  = BindR (mergeCtxs' ff fi x) $ \(y, ys) => mergeCtxs' ff ys $ f y
+  mergeCtxs' ff fi $ BindE x h  = BindE (mergeCtxs' ff fi x) $ either (mergeCtxs' ff fi . h) (Fail . Right)
+  mergeCtxs' ff fi $ Ensure l x = Ensure (mapCtx (map pure) l) (mergeCtxs' ff fi x) `BindR` \(rl, rr, rs) => succeed ((rl, rr), rs)
 
 export
 mergeCtxs : Applicative m => Applicative n => Semigroup r => Swirl m e r (Swirl n e r o) -> Swirl (m . n) e r o
-mergeCtxs = mergeCtxs (<+>)
+mergeCtxs = (`BindR` Done . mergeSemi) . mapError fromEither . mergeCtxs' (\a, x => (a <+> Just x) @{Deep}) Nothing
 
 namespace ComposeResults
 
@@ -311,21 +311,20 @@ namespace ComposeResults
   --      The same applies to the `mergeCtxs'` above.
 
   export
-  squashOuts' : Functor m => Swirl m e r (Swirl m e' r' o) -> Swirl m (Either e e') (r, List r') o
-  squashOuts' $ Done x     = Done (x, [])
-  squashOuts' $ Fail e     = Fail $ Left e
-  squashOuts' $ Yield x sw = concat (mapSnd . (::)) (mapError Right x) (squashOuts' sw)
-  squashOuts' $ Effect msw = Effect $ msw <&> mapLazy (assert_total squashOuts')
-  squashOuts' $ BindR x f  = BindR (squashOuts' x) $ \(y, ys) => mapFst (mapSnd (ys ++)) $ squashOuts' $ f y
-  squashOuts' $ BindE x h  = BindE (squashOuts' x) $ either (squashOuts' . h) (Fail . Right)
-  squashOuts' $ Ensure l x = Ensure l (squashOuts' x) `BindR` \(rl, rr, rs) => succeed ((rl, rr), rs)
+  squashOuts' : Functor m => (r'' -> r' -> r'') -> r'' -> Swirl m e r (Swirl m e' r' o) -> Swirl m (Either e e') (r, r'') o
+  squashOuts' ff fi $ Done x     = Done (x, fi)
+  squashOuts' ff fi $ Fail e     = Fail $ Left e
+  squashOuts' ff fi $ Yield x sw = mapError Right x `BindR` \lr => squashOuts' ff (fi `ff` lr) sw
+  squashOuts' ff fi $ Effect msw = Effect $ msw <&> mapLazy (assert_total squashOuts' ff fi)
+  squashOuts' ff fi $ BindR x f  = BindR (squashOuts' ff fi x) $ \(y, ys) => squashOuts' ff ys $ f y
+  squashOuts' ff fi $ BindE x h  = BindE (squashOuts' ff fi x) $ either (squashOuts' ff fi . h) (Fail . Right)
+  squashOuts' ff fi $ Ensure l x = Ensure l (squashOuts' ff fi x) `BindR` \(rl, rr, rs) => succeed ((rl, rr), rs)
 
-  export
-  squashOuts : Functor m => (r' -> r -> r) -> Swirl m e r (Swirl m e r' o) -> Swirl m e r o
-  squashOuts fr = mapFst (uncurry $ foldr fr) . mapError fromEither . squashOuts'
+squashOuts' : Functor m => Swirl m e r (Swirl m e' () o) -> Swirl m (Either e e') r o
+squashOuts' = mapFst fst . squashOuts' (const id) ()
 
 squashOuts : Functor m => Semigroup r => Swirl m e r (Swirl m e r o) -> Swirl m e r o
-squashOuts = squashOuts (<+>)
+squashOuts = mapFst mergeSemi . mapError fromEither . squashOuts' (\a, x => (a <+> Just x) @{Deep}) Nothing
 
 squashRes : Swirl m e (Swirl m e r o) o -> Swirl m e r o
 squashRes $ Done sw = sw
@@ -341,7 +340,7 @@ mapEither' : Functor m =>
              (o -> Either e' o') ->
              Swirl m e r o ->
              Swirl m (Either e e') r o'
-mapEither' f = mapFst fst . squashOuts' . mapSnd (emitOrFail . f)
+mapEither' f = squashOuts' . mapSnd (emitOrFail . f)
 
 export
 mapEither : Functor m => (o -> Either e o') -> Swirl m e r o -> Swirl m e r o'
@@ -582,7 +581,7 @@ dropWhile = mapError snd .: mapFst snd .: dropWhile'
 
 intersperseOuts' : Functor m => (sep : Swirl m e () o) -> Swirl m e r o -> Swirl m (Bool, e) (Bool, r) o
 %inline prepO : Functor m => Bool -> (sep : Swirl m e () o) -> Swirl m e r o -> Swirl m (Bool, e) (Bool, r) o
-prepO True  sep sw = mapError (True,) $ mapFst (True,) $ squashOuts (const id) $ map (\x' => concat const sep $ emit x') sw
+prepO True  sep sw = mapError ((True,) . fromEither) $ mapFst (True,) $ squashOuts' $ map (\x' => concat const sep $ emit x') sw
 prepO False sep sw = intersperseOuts' sep sw
 intersperseOuts' sep $ Done x     = Done (False, x)
 intersperseOuts' sep $ Fail e     = Fail (False, e)
