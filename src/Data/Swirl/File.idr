@@ -17,11 +17,7 @@ emitUntilEOF : HasIO io =>
                (File -> io (Either e a)) ->
                File ->
                Swirl io e r a
-emitUntilEOF act file = fEOF file >>= \case
-  True  => succeed neutral
-  False => emit.by (act file) >>= \case
-    Left err => fail err
-    Right x => pure x ++ emitUntilEOF act file
+emitUntilEOF act file = tickUntil (fEOF @{ByResult} file) >> emitOrFail.by (act file)
 
 export
 readAsChars : HasIO io =>
