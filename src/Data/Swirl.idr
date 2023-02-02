@@ -607,19 +607,13 @@ intersperseOuts = mapError snd .: mapFst snd .: intersperseOuts'
 
 --- Eliminators ---
 
---export
---toLazyList : Swirl Identity Void () a -> LazyList a
---toLazyList $ Done ()    = []
---toLazyList $ Yield x sw = x :: toLazyList sw
---toLazyList $ Effect msw = assert_total toLazyList $ runIdentity msw
---toLazyList $ BindR x f  = ?toLazyList_rhs_4
---toLazyList $ BindE x h  = ?toLazyList_rhs_5
-
-export
-[NoTailRec] Monad m => MonadRec m where
-  tailRecM s acc (Access ac) f = f s acc >>= \case
-    Cont s' prf st' => tailRecM s' st' (ac s' prf) f
-    Done vres       => pure vres
+--toLazyList : Swirl Identity e r o -> (Either e r, LazyList o)
+--toLazyList $ Done x       = (Right x, [])
+--toLazyList $ Fail e       = (Left e, [])
+--toLazyList $ Yield x sw   = x :: toLazyList sw
+--toLazyList e@(Effect msw) = toLazyList $ assert_smaller e $ runIdentity msw
+--toLazyList $ BindR x f    = ?toLazyList_rhs_4
+--toLazyList $ BindE x h    = ?toLazyList_rhs_5
 
 data Ctx : (Type -> Type) -> (inE, inR, outE, outR : Type) -> Type where
   Nil : Ctx m e r e r
@@ -671,3 +665,10 @@ result sw = tailRecM {rel=StLT} (sw `AtCtx` []) () (wellFounded _) $ \sw, () => 
 export
 result' : MonadRec m => Swirl m Void a Void -> m a
 result' = map (\(Right x) => x) . result
+
+||| Adds an ability for run `Swirl` in an arbitrary monad, but without guarantees of limited stack usage.
+export
+[NoTailRec] Monad m => MonadRec m where
+  tailRecM s acc (Access ac) f = f s acc >>= \case
+    Cont s' prf st' => tailRecM s' st' (ac s' prf) f
+    Done vres       => pure vres
