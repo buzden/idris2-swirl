@@ -131,11 +131,6 @@ andThen sw sv = BindR sw $ const sv
 
 infixl 1 `andThen` -- as `>>`
 
--- experimental; if this clutters monad instance usage, it will be removed
-export %inline
-(>>) : Swirl m e () o -> Lazy (Swirl m e r o) -> Swirl m e r o
-(>>) = andThen
-
 --- Forgetting ---
 
 export
