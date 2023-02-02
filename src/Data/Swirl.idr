@@ -465,6 +465,13 @@ namespace Monad
       join = squashRes
       (>>=) = bindR
 
+namespace HasIO
+
+  export
+  [ByResult] HasIO io => HasIO (\r => Swirl io e r o)
+    using Monad.ByResult where
+      liftIO = succeed.by . liftIO
+
 --- Error handling ---
 
 export
