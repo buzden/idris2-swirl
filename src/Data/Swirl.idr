@@ -605,39 +605,6 @@ export
 intersperseOuts : Functor m => (sep : Swirl m e () o) -> Swirl m e r o -> Swirl m e r o
 intersperseOuts = mapError snd .: mapFst snd .: intersperseOuts'
 
---- Well-foundness ---
-
-data LT : Lazy (Swirl m e r o) -> Lazy (Swirl m e' r' o') -> Type where
-  YLT : sw `LT` Yield x sw
-  --ELT : (msw = pure sw) -> LT {m} sw $ Effect msw
-  BR1 : sw `LT` BindR sw f
-  BR2 : (r : _) -> {sw : _} -> f r `LT` BindR sw f
-  BE1 : sw `LT` BindE sw h
-  BE2 : (e : _) -> {sw : _} -> h e `LT` BindE sw h
-  En1 : sw `LT` Ensure sw sv
-  En2 : sv `LT` Ensure sw sv
-
-[WFL] WellFounded (Lazy (Swirl m e r o)) LT where
-  wellFounded $ Done x     = Access $ \_ => \case YLT impossible
-  wellFounded $ Fail x     = Access $ \_ => \case YLT impossible
-  wellFounded $ Yield x sw = Access $ \_, YLT => wellFounded sw
-  wellFounded $ Effect msw = Access $ \_ => \case YLT impossible -- => wellFounded $ assert_smaller msw sv
-  wellFounded $ BindR x f  = Access $ \_ => \case
-                                        BR1 => wellFounded x
-                                        BR2 r => wellFounded $ f r
-  wellFounded $ BindE x h  = Access $ \_ => \case
-                                        BE1 => wellFounded x
-                                        BE2 e => wellFounded $ h e
-  wellFounded $ Ensure l x = Access $ \_ => \case En1 impossible
-
-LT' : Swirl m e r o -> Swirl m e' r' o' -> Type
-LT' sw sv = LT sw sv
-
-WellFounded (Swirl m e r o) LT' where
-  wellFounded sw = adaptAccs $ wellFounded @{WFL} sw where
-    %inline adaptAccs : forall sw. Accessible LT (delay sw) -> Accessible LT' sw
-    adaptAccs $ Access f = Access $ \y, lt => adaptAccs $ f y lt
-
 --- Eliminators ---
 
 --export
@@ -663,30 +630,43 @@ data Ctx : (Type -> Type) -> (inE, inR, outE, outR : Type) -> Type where
 data St : (Type -> Type) -> (finalE, finalR : Type) -> Type where
   AtCtx : Swirl m e' r' Void -> Ctx m e' r' e r -> St m e r
 
-data Rel : St m e r -> St m e r -> Type
+data StLT : St m e r -> St m e r -> Type where
+  BiRLT : (sw `AtCtx` ctx) `StLT` (sv `AtCtx` BiR f ctx)
+  BiELT : (sw `AtCtx` ctx) `StLT` (sv `AtCtx` BiE f ctx)
+  EnsLT : (sw `AtCtx` ctx) `StLT` (sv `AtCtx` Ens l ctx)
 
-WellFounded (St m e r) Rel where
-  wellFounded = ?wellFounded_st
+  SwBR : (Force sw `AtCtx` BiR f         ctx) `StLT` (BindR sw f `AtCtx` ctx)
+  SwBE : (Force sw `AtCtx` BiE f         ctx) `StLT` (BindE sw f `AtCtx` ctx)
+  SwEn : (Force sw `AtCtx` Ens (Force l) ctx) `StLT` (Ensure l sw `AtCtx` ctx)
+
+  EfLT : (sw `AtCtx` ctx) `StLT` (Effect msw `AtCtx` ctx)
+  -- No relation between `sw` and `msw` depicted here :-(
+
+covering
+WellFounded (St m e r) StLT where
+  wellFounded st = wellFounded st
+
+-- Why does the following function pass totality checker once we have only covering wellfoundness implementation?
 
 export
 result : MonadRec m => Swirl m e r Void -> m $ Either e r
-result sw = tailRecM {rel=Rel} (sw `AtCtx` []) () (wellFounded _) $ \sw, () => case sw of
+result sw = tailRecM {rel=StLT} (sw `AtCtx` []) () (wellFounded _) $ \sw, () => case sw of
 
   Done x `AtCtx` []        => pure $ Done $ Right x
-  Done x `AtCtx` BiR f ct  => pure $ Cont (f x `AtCtx` ct) ?rel_done_bir ()
-  Done x `AtCtx` BiE _ ct  => pure $ Cont (Done x `AtCtx` ct) ?rel_done_bie ()
-  Done x `AtCtx` Ens sv ct => pure $ Cont ((mapError absurd $ mapFst (,x) $ sv) `AtCtx` ct) ?rel_done_ens ()
+  Done x `AtCtx` BiR f ct  => pure $ Cont (f x `AtCtx` ct) BiRLT ()
+  Done x `AtCtx` BiE _ ct  => pure $ Cont (Done x `AtCtx` ct) BiELT ()
+  Done x `AtCtx` Ens sv ct => pure $ Cont ((mapError absurd $ mapFst (,x) $ sv) `AtCtx` ct) EnsLT ()
 
   Fail e `AtCtx` []        => pure $ Done $ Left e
-  Fail e `AtCtx` BiR _ ct  => pure $ Cont (Fail e `AtCtx` ct) ?rel_fail_bir ()
-  Fail e `AtCtx` BiE h ct  => pure $ Cont (h e `AtCtx` ct) ?rel_fail_bie ()
-  Fail e `AtCtx` Ens sv ct => pure $ Cont ((mapError absurd (forgetR sv) `andThen` Fail e) `AtCtx` ct) ?rel_fail_ens ()
+  Fail e `AtCtx` BiR _ ct  => pure $ Cont (Fail e `AtCtx` ct) BiRLT ()
+  Fail e `AtCtx` BiE h ct  => pure $ Cont (h e `AtCtx` ct) BiELT ()
+  Fail e `AtCtx` Ens sv ct => pure $ Cont ((mapError absurd (forgetR sv) `andThen` Fail e) `AtCtx` ct) EnsLT ()
 
-  Effect msw `AtCtx` ct => msw <&> \sw => Cont (sw `AtCtx` ct) ?rel_effect ()
+  Effect msw `AtCtx` ct => msw <&> \sw => Cont (sw `AtCtx` ct) EfLT ()
 
-  BindR sw f  `AtCtx` ct => pure $ Cont (sw `AtCtx` BiR f ct) ?rel_bindr ()
-  BindE sw h  `AtCtx` ct => pure $ Cont (sw `AtCtx` BiE h ct) ?rel_binde ()
-  Ensure l sw `AtCtx` ct => pure $ Cont (sw `AtCtx` Ens l ct) ?rel_ensure ()
+  BindR sw f  `AtCtx` ct => pure $ Cont (sw `AtCtx` BiR f ct) SwBR ()
+  BindE sw h  `AtCtx` ct => pure $ Cont (sw `AtCtx` BiE h ct) SwBE ()
+  Ensure l sw `AtCtx` ct => pure $ Cont (sw `AtCtx` Ens l ct) SwEn ()
 
 export
 result' : MonadRec m => Swirl m Void a Void -> m a
