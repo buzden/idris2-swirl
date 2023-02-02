@@ -280,23 +280,37 @@ namespace ToResult
 
 namespace ToOutput
 
---  export
---  foldlO : Functor m => (o' -> o -> o') -> o' -> Swirl m e r o -> Swirl m e r o'
---  foldlO op init $ Done x     = Yield init $ Done x
---  foldlO op init $ Fail e     = Fail e -- should we yield a value before failing?
---  foldlO op init $ Yield x sw = foldlO op (init `op` x) sw
---  foldlO op init $ Effect msw = Effect $ msw <&> mapLazy (assert_total foldlO op init)
---  foldlO op init $ BindR x f  = BindR (foldlO op init x) (foldlO op init . f) -- TODO may result to several yields!
---  foldlO op init $ BindE x h  = BindE (foldlO op init x) (foldlO op init . h)
---  foldlO op init $ Ensure l x = Ensure l (foldlO op init x)
---
---  export
---  foldO : Functor m => Monoid o => Swirl m e r o -> Swirl m e r o
---  foldO = foldlO (<+>) neutral
---
---  export
---  outputs : Functor m => Swirl m e r o -> Swirl m e r (SnocList o)
---  outputs = foldlO (:<) [<]
+  foldlO'R : Functor m => (o' -> o -> o') -> o' -> Swirl m e r o -> Swirl m (e, o') (r, o') Void
+  foldlO'R op init $ Done x     = Done (x, init)
+  foldlO'R op init $ Fail e     = Fail (e, init)
+  foldlO'R op init $ Yield x sw = foldlO'R op (init `op` x) sw
+  foldlO'R op init $ Effect msw = Effect $ msw <&> mapLazy (assert_total foldlO'R op init)
+  foldlO'R op init $ BindR x f  = BindR (foldlO'R op init x) $ \(r', into) => foldlO'R op into $ f r'
+  foldlO'R op init $ BindE x h  = BindE (foldlO'R op init x) $ \(e, into) => foldlO'R op into $ h e
+  foldlO'R op init $ Ensure l x = Ensure l (foldlO'R op init x) `BindR` \(r', r, o') => Done ((r', r), o')
+
+  ||| Emits the folded value once before both successful and failing ending.
+  export
+  foldlO' : Functor m => (o' -> o -> o') -> o' -> Swirl m e r o -> Swirl m e r o'
+  foldlO' f i =
+    (`BindE` \(e, o') => Yield o' $ Fail e) .
+    (`BindR` \(x, o') => Yield o' $ Done x) .
+      mapSnd absurd . foldlO'R f i
+
+  ||| Emits the folded value once and only before the successful ending.
+  export
+  foldlO : Functor m => (o' -> o -> o') -> o' -> Swirl m e r o -> Swirl m e r o'
+  foldlO f i =
+    (`BindR` \(x, o') => Yield o' $ Done x) .
+      mapError fst . mapSnd absurd . foldlO'R f i
+
+  export
+  foldO : Functor m => Monoid o => Swirl m e r o -> Swirl m e r o
+  foldO = foldlO (<+>) neutral
+
+  export
+  outputs : Functor m => Swirl m e r o -> Swirl m e r (SnocList o)
+  outputs = foldlO (:<) [<]
 
 --- Flattenings ---
 
