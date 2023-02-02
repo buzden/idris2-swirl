@@ -13,4 +13,5 @@ depends = if-unsolved-implicit
         , contrib
 
 modules = Data.Swirl
+        , Data.Swirl.Console
         , Data.Swirl.File
