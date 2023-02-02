@@ -237,22 +237,33 @@ emitRes = emitRes' $ const neutral
 namespace ToResult
 
   export
-  foldrRO : Functor m => (0 _ : IfUnsolved o' Void) => (o -> r -> r) -> Swirl m e r o -> Swirl m e r o'
+  foldlRO : Functor m => (0 _ : IfUnsolved o'' Void) => (o' -> o -> o') -> o' -> (o' -> r -> r') -> Swirl m e r o -> Swirl m e r' o''
+  foldlRO fo inito fr $ Done x     = Done $ fr inito x
+  foldlRO fo inito fr $ Fail e     = Fail e
+  foldlRO fo inito fr $ Yield x sw = foldlRO fo (fo inito x) fr sw
+  foldlRO fo inito fr $ Effect msw = Effect $ msw <&> mapLazy (assert_total foldlRO fo inito fr)
+  foldlRO fo inito fr $ BindR x f  = BindR (foldlRO fo inito (,) x) $ \(into, r') => foldlRO fo into fr $ f r'
+  foldlRO fo inito fr $ BindE x h  = BindE (foldlRO fo inito fr x) (foldlRO fo inito fr . h)
+  foldlRO fo inito fr $ Ensure l x = Ensure l (foldlRO fo inito (,) x) `BindR` \(r', o', r) => Done $ fr o' (r', r)
 
-  export
+  export %inline
+  foldlRO' : Functor m => (0 _ : IfUnsolved o' Void) => (o -> o -> o) -> (o -> r -> r) -> Swirl m e r o -> Swirl m e r o'
+  foldlRO' f g = foldlRO (Just .: maybe id f) Nothing (maybe id g)
+
+  export %inline
   foldRO : Functor m => Semigroup o => (0 _ : IfUnsolved o' Void) => Swirl m e o o -> Swirl m e o o'
-  foldRO = foldrRO (<+>)
+  foldRO = foldlRO' (<+>) (<+>)
 
-  export
-  foldrO : Functor m =>
+  export %inline
+  foldlO : Functor m =>
            (0 _ : IfUnsolved o' Void) =>
-           (o -> r -> r) ->
+           (r -> o -> r) ->
            r ->
            Swirl m e () o ->
            Swirl m e r o'
-  foldrO f x = foldrRO f . mapFst (const x)
+  foldlO f x = foldlRO f x const
 
-  export
+  export %inline
   foldO : Functor m =>
           Monoid o =>
           (0 _ : IfUnsolved o' Void) =>
@@ -260,12 +271,12 @@ namespace ToResult
           Swirl m e o o'
   foldO = foldRO . mapFst (const neutral)
 
-  export
+  export %inline
   outputs : Functor m =>
             (0 _ : IfUnsolved o' Void) =>
             Swirl m e () o ->
-            Swirl m e (List o) o'
-  outputs = foldrO (::) []
+            Swirl m e (SnocList o) o'
+  outputs = foldlO (:<) [<]
 
 namespace ToOutput
 
