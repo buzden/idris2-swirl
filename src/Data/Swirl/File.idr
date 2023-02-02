@@ -4,68 +4,76 @@ import public Data.Swirl
 
 import public Language.Implicits.IfUnsolved
 
+import System.File
 import public System.File.Error
-import System.File.ReadWrite
+import public System.File.Mode
 
 %default covering
 
--- stops the swirl if it gets a file error
-emitUntilEOF : HasIO io => (0 _ : IfUnsolved io IO) =>
-               Alternative f => (0 _ : IfUnsolved f Maybe) =>
+emitUntilEOF : HasIO io =>
+               Monoid r =>
+               (0 _ : IfUnsolved io IO) =>
+               (0 _ : IfUnsolved r ()) =>
                (File -> io (Either e a)) ->
                File ->
-               Swirl io (f e) a
-emitUntilEOF act file = let _ = Prelude.MonoidAlternative in fEOF file >>= \case
-  True  => done neutral
-  False => emit (act file) >>= \case
-    Left err => done $ pure err
+               Swirl io e r a
+emitUntilEOF act file = fEOF file >>= \case
+  True  => succeed neutral
+  False => emit.by (act file) >>= \case
+    Left err => fail err
     Right x => pure x ++ emitUntilEOF act file
 
--- stops on a file error
 export
-readAsChars : HasIO io => (0 _ : IfUnsolved io IO) =>
-              Alternative f => (0 _ : IfUnsolved f Maybe) =>
+readAsChars : HasIO io =>
+              Monoid r =>
+              (0 _ : IfUnsolved io IO) =>
+              (0 _ : IfUnsolved r ()) =>
               File ->
-              Swirl io (f FileError) Char
+              Swirl io FileError r Char
 readAsChars = emitUntilEOF fGetChar
 
--- stops on a file error
 export
-readAsLines : HasIO io => (0 _ : IfUnsolved io IO) =>
-              Alternative f => (0 _ : IfUnsolved f Maybe) =>
+readAsLines : HasIO io =>
+              Monoid r =>
+              (0 _ : IfUnsolved io IO) =>
+              (0 _ : IfUnsolved r ()) =>
               File ->
-              Swirl io (f FileError) String
+              Swirl io FileError r String
 readAsLines = emitUntilEOF fGetLine
 
--- stops on a file error
 export
-readAsChunks : HasIO io => (0 _ : IfUnsolved io IO) =>
-               Alternative f => (0 _ : IfUnsolved f Maybe) =>
+readAsChunks : HasIO io =>
+               Monoid r =>
+               (0 _ : IfUnsolved io IO) =>
+               (0 _ : IfUnsolved r ()) =>
                (chunkMaxSize : Nat) ->
                File ->
-               Swirl io (f FileError) String
+               Swirl io FileError r String
 readAsChunks sz = emitUntilEOF $ \file => fGetChars file $ cast sz
 
--- stops on a file error, ignores the result of input swirl
 export
-writeAll : HasIO io => (0 _ : IfUnsolved io IO) =>
-           Alternative f => (0 _ : IfUnsolved f Maybe) =>
+writeStr : HasIO io =>
+           Monoid r =>
+           (0 _ : IfUnsolved io IO) =>
            (0 _ : IfUnsolved r ()) =>
            (0 _ : IfUnsolved o Void) =>
            File ->
-           Swirl io r String ->
-           Swirl io (f FileError) o
-writeAll file sw = let _ = Prelude.MonoidAlternative in forgetOuts $ wiggleOuts wgl $ forgetRes sw where
-  wgl : String -> Lazy (Swirl io (f FileError) String) -> Swirl io () (Swirl io (f FileError) String)
-  wgl str cont = fPutStr file str >>= pure . either (done . pure) (const cont)
+           String ->
+           Swirl io FileError r o
+writeStr file str = mapFst (const neutral) $ succeedOrFail.by $ fPutStr file str
 
--- stops on a file error, saves the result of original swirl if it can
 export
-writeAll' : HasIO io => (0 _ : IfUnsolved io IO) =>
-            (0 _ : IfUnsolved o Void) =>
-            File ->
-            Swirl io r String ->
-            Swirl io (Either FileError r) o
-writeAll' file sw = forgetOuts $ wriggleOuts wgl $ map @{ByResult} Right sw where
-  wgl : String -> Lazy (Swirl io (Either FileError r) String) -> Swirl io (Swirl io (Either FileError r) String) String
-  wgl str cont = (finish (fPutStr file str) >>= done . either (done . Left) (const cont)) @{ByResult}
+withFile : HasIO io =>
+           (mode : Mode) ->
+           (filename : String) ->
+           (File -> Swirl io FileError r o) ->
+           Swirl io FileError r o
+withFile mode filename = bracket (succeedOrFail.by $ openFile filename mode) (succeed.by . closeFile)
+
+export
+withFile' : HasIO io =>
+            (mode : Mode) ->
+            (filename : String) ->
+            (File -> Swirl io (Either FileError e) r o) ->
+            Swirl io (Either FileError e) r o
+withFile' mode filename = bracket (mapError Left $ succeedOrFail.by $ openFile filename mode) (succeed.by . closeFile)
