@@ -4,7 +4,7 @@ import Data.Maybe
 import Data.SortedMap
 import Data.String
 import Data.Swirl
-import Data.Swirl.File
+import Data.Swirl.Console
 
 import System
 import System.File
@@ -40,15 +40,10 @@ showNucleobases nbs = unwords $ nucleobases <&> show . fromMaybe neutral . flip 
 main : IO ()
 main = do
   let _ = Monoid.Additive
-  r <- TailRec.result $
-         writeAll' stdout $
-           map ((++ "\n") . showNucleobases) $
-             ToOutput.foldOuts $
-               map (\k => singleton k 1) $
-                 tryOrDie nucleoChar $
-                   filter (/= '\n') $ filter (/= '\NUL') $
-                     readAsChars stdin
-  case r of
-    Left fe         => die $ show fe
-    Right (Left e)  => die e
-    Right (Right e) => maybe (pure ()) (die . show) e
+  r <- result $ forgetO $
+         (putStrLn . showNucleobases =<<) $
+           ToOutput.foldO $
+             (emitOrFail . map (\k => singleton k 1) . nucleoChar =<<) $
+               filter (/= '\n') $ filter (/= '\255') $
+                 stdinAsChars
+  either die pure r
