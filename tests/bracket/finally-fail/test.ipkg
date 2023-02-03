@@ -1,0 +1,9 @@
+package test
+
+authors = "Denis Buzdalov"
+
+main = Main
+
+depends = swirl, contrib
+
+executable = "test"

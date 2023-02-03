@@ -1,0 +1,6 @@
+main action
+finally
+main fail
+[ fatal ] Error when executing system command.
+          Command: ".../tests/bracket/finally-fail/build/exec/test"
+          Error code: 1
