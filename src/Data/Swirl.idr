@@ -692,10 +692,3 @@ runSwirlE sw = tailRecM {rel=StLT} (sw `AtCtx` []) () (wellFounded _) $ \sw, () 
 export
 runSwirl : MonadRec m => Swirl m Void a Void -> m a
 runSwirl = map (\(Right x) => x) . runSwirlE
-
-||| Adds an ability for run `Swirl` in an arbitrary monad, but without guarantees of limited stack usage.
-export
-[NoTailRec] Monad m => MonadRec m where
-  tailRecM s acc (Access ac) f = f s acc >>= \case
-    Cont s' prf st' => tailRecM s' st' (ac s' prf) f
-    Done vres       => pure vres
