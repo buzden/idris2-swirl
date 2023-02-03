@@ -1,6 +1,6 @@
 rm -rf build
 
-cat /dev/random | tr -dc [:alnum:][:space:] | head -c 100M > from
+cat /dev/random 2>/dev/null | tr -dc [:alnum:][:space:] 2>/dev/null | head -c 100M > from
 
 stat --format='%s' from
 
