@@ -10,4 +10,5 @@ RunScriptArg where
 main : IO ()
 main = goldenRunner
   [ "File API" `atDir` "file"
+  , "Console API" `atDir` "console"
   ]
