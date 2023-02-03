@@ -7,7 +7,7 @@ import System
 
 main : IO ()
 main =
-  result' $ handleError (die . show) $
+  runSwirl $ handleError (die . show) $
     withFile Read "from" $ \from =>
       withFile WriteTruncate "to" $ \to =>
         readAsChunks (1024 * 1023) from >>= writeStr to

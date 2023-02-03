@@ -670,8 +670,8 @@ WellFounded (St m e r) StLT where
 -- Why does the following function pass totality checker once we have only covering wellfoundness implementation?
 
 export
-result : MonadRec m => Swirl m e r Void -> m $ Either e r
-result sw = tailRecM {rel=StLT} (sw `AtCtx` []) () (wellFounded _) $ \sw, () => case sw of
+runSwirlE : MonadRec m => Swirl m e r Void -> m $ Either e r
+runSwirlE sw = tailRecM {rel=StLT} (sw `AtCtx` []) () (wellFounded _) $ \sw, () => case sw of
 
   Done x `AtCtx` []        => pure $ Done $ Right x
   Done x `AtCtx` BiR f ct  => pure $ Cont (f x `AtCtx` ct) BiRLT ()
@@ -690,8 +690,8 @@ result sw = tailRecM {rel=StLT} (sw `AtCtx` []) () (wellFounded _) $ \sw, () => 
   Ensure l sw `AtCtx` ct => pure $ Cont (sw `AtCtx` Ens l ct) SwEn ()
 
 export
-result' : MonadRec m => Swirl m Void a Void -> m a
-result' = map (\(Right x) => x) . result
+runSwirl : MonadRec m => Swirl m Void a Void -> m a
+runSwirl = map (\(Right x) => x) . runSwirlE
 
 ||| Adds an ability for run `Swirl` in an arbitrary monad, but without guarantees of limited stack usage.
 export
