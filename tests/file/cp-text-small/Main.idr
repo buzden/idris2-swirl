@@ -7,10 +7,8 @@ import System
 import System.File
 
 main : IO ()
-main = do
-  Right xx <- result $
-                withFile Read "from" $ \from =>
-                  withFile WriteTruncate "to" $ \to =>
-                    readAsChunks 1024 from >>= writeStr to
-  | Left err => die $ show err
-  pure xx
+main =
+  result' $ handleError (die . show) $
+    withFile Read "from" $ \from =>
+      withFile WriteTruncate "to" $ \to =>
+        readAsChunks 1024 from >>= writeStr to

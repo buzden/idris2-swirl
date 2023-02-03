@@ -40,10 +40,9 @@ showNucleobases nbs = unwords $ nucleobases <&> show . fromMaybe neutral . flip 
 main : IO ()
 main = do
   let _ = Monoid.Additive
-  r <- result $ forgetO $
-         (putStrLn . showNucleobases =<<) $
-           ToOutput.foldO $
-             (emitOrFail . map (\k => singleton k 1) . nucleoChar =<<) $
-               filter (/= '\n') $ filter (/= '\255') $
-                 stdinAsChars
-  either die pure r
+  result' $ handleError die $ forgetO $
+    (putStrLn . showNucleobases =<<) $
+      ToOutput.foldO $
+        (emitOrFail . map (\k => singleton k 1) . nucleoChar =<<) $
+          filter (/= '\n') $ filter (/= '\255') $
+            stdinAsChars
