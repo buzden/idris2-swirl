@@ -671,7 +671,7 @@ WellFounded (St m e r) StLT where
 
 export
 runSwirlE : MonadRec m => Swirl m e r Void -> m $ Either e r
-runSwirlE sw = tailRecM {rel=StLT} (sw `AtCtx` []) () (wellFounded _) $ \sw, () => case sw of
+runSwirlE sw = trWellFounded (sw `AtCtx` []) () $ \sw, () => case sw of
 
   Done x `AtCtx` []        => pure $ Done $ Right x
   Done x `AtCtx` BiR f ct  => pure $ Cont (f x `AtCtx` ct) BiRLT ()
