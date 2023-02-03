@@ -2,7 +2,7 @@ package swirl
 
 authors = "Denis Buzdalov"
 license = "Apache-2.0"
-brief = "Swirl, streams of monadic actions"
+brief = "Swirls, streams of monadic actions"
 
 version = 0.1.0
 

@@ -9,7 +9,8 @@ RunScriptArg where
 
 main : IO ()
 main = goldenRunner
-  [ "File API" `atDir` "file"
+  [ "Documentation" `atDir` "docs"
+  , "File API" `atDir` "file"
   , "Console API" `atDir` "console"
   , "Finalising and bracketing" `atDir` "bracket"
   ]
