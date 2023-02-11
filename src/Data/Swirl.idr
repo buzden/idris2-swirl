@@ -19,7 +19,7 @@ data Swirl : (Type -> Type) -> (error, result, output : Type) -> Type where
   Done   : r -> Swirl m e r o
   Fail   : e -> Swirl m e r o
   Yield  : o -> Lazy (Swirl m e r o) -> Swirl m e r o
-  Effect : m (Lazy (Swirl m e r o)) -> Swirl m e r o
+  Effect : m (assert_total $ Swirl m e r o) -> Swirl m e r o
   BindR  : Lazy (Swirl m e r' o) -> (r' -> Swirl m e r o) -> Swirl m e r o
   BindE  : Lazy (Swirl m e' r o) -> (e' -> Swirl m e r o) -> Swirl m e r o
   Ensure : Lazy (Swirl m Void r' Void) -> Lazy (Swirl m e r o) -> Swirl m e (r', r) o
@@ -28,16 +28,16 @@ data Swirl : (Type -> Type) -> (error, result, output : Type) -> Type where
 
 -- Discussion:
 --
--- - `Effect` constructor
+-- - `Effect` constructor.
 --
---   `m (Lazy ...)` in `Effect` exploits totality checker's bug to make the type as if it's strictly positive.
---   Actually, it seems, the whole `data` definition should be `covering`.
---   But, by the idea, this `m` must be `Functor`, and I'm not sure whether this is possible to get the situation
---   when this data type really is not total.
+--   The totality assertion is due to a functor requirement on the `m`, which
+--   is used for the recursive use of the type.
+--   This requirement is not depicted directly in the type of the constructor,
+--   since it would lead to ambiguity errors, but it is meant to be present.
 --
 -- - `Ensure` constructor, output parameter of "finally" section.
 --
---   the `finally` part must not emit values because of the following:
+--   The `finally` part must not emit values because of the following:
 --   if the `finally` part can emit a value, it means that one can bind (`>>=`) the whole `Ensure` expression by
 --   some `Swirl` which, in its order, may fail. This would lead to either ability of non-full "finally" block to be executed,
 --   or the need of failure-ignoring variant of `>>=` to be used for it. Both it possible, but both are counter-intuitive.
@@ -68,10 +68,6 @@ data Swirl : (Type -> Type) -> (error, result, output : Type) -> Type where
 --   Resulting error type of the contructor could be `(r', e)`, to emphasize that finally section always executes,
 --   Thus always returning `r'` in both channels.
 
-%inline %tcinline
-mapLazy : (a -> b) -> Lazy a -> Lazy b
-mapLazy f = delay . f . force
-
 --- Basic mapping ---
 
 export
@@ -79,7 +75,7 @@ Functor m => Bifunctor (Swirl m e) where
   bimap fr fo $ Done x     = Done $ fr x
   bimap fr fo $ Fail x     = Fail x
   bimap fr fo $ Yield o sw = Yield (fo o) (bimap fr fo sw)
-  bimap fr fo $ Effect msw = Effect $ msw <&> mapLazy (assert_total bimap fr fo)
+  bimap fr fo $ Effect msw = Effect $ msw <&> assert_total bimap fr fo
   bimap fr fo $ BindR x f  = BindR (bimap id fo x) (bimap fr fo . f)
   bimap fr fo $ BindE x h  = BindE (bimap fr fo x) (bimap fr fo . h)
   bimap fr fo $ Ensure l x = Ensure l (bimap id fo x) `BindR` Done . fr
@@ -93,7 +89,7 @@ mapCtx : Functor m => (forall a. m a -> n a) -> Swirl m e r o -> Swirl n e r o
 mapCtx f $ Done x     = Done x
 mapCtx f $ Fail x     = Fail x
 mapCtx f $ Yield x sw = Yield x $ mapCtx f sw
-mapCtx f $ Effect msw = Effect $ f $ msw <&> mapLazy (assert_total mapCtx f)
+mapCtx f $ Effect msw = Effect $ f $ msw <&> assert_total mapCtx f
 mapCtx f $ BindR x g  = BindR (mapCtx f x) (mapCtx f . g)
 mapCtx f $ BindE x h  = BindE (mapCtx f x) (mapCtx f . h)
 mapCtx f $ Ensure l x = Ensure (mapCtx f l) (mapCtx f x)
@@ -138,7 +134,7 @@ forgetO : Functor m => (0 _ : IfUnsolved o Void) => Swirl m e r a -> Swirl m e r
 forgetO $ Done x     = Done x
 forgetO $ Fail e     = Fail e
 forgetO $ Yield x sw = forgetO sw
-forgetO $ Effect msw = Effect $ msw <&> mapLazy (assert_total forgetO)
+forgetO $ Effect msw = Effect $ msw <&> assert_total forgetO
 forgetO $ BindR sw g = BindR (forgetO sw) (forgetO . g)
 forgetO $ BindE sw h = BindE (forgetO sw) (forgetO . h)
 forgetO $ Ensure l x = Ensure (forgetO l) (forgetO x)
@@ -155,7 +151,7 @@ forgetR sw       = BindR sw $ const $ Done neutral
 ||| E.g. `emit v` emits `v` without any action, and `emit.by mv` emits a value of type `v` from `mv` of type `m v`.
 export %inline
 (.by) : Functor m => (x -> Swirl m e r o) -> m x -> Swirl m e r o
-f.by = Effect . map (delay . f)
+f.by = Effect . map f
 
 -- Output --
 
@@ -236,7 +232,7 @@ namespace ToResult
   foldlRO fo inito fr $ Done x     = Done $ fr inito x
   foldlRO fo inito fr $ Fail e     = Fail e
   foldlRO fo inito fr $ Yield x sw = foldlRO fo (fo inito x) fr sw
-  foldlRO fo inito fr $ Effect msw = Effect $ msw <&> mapLazy (assert_total foldlRO fo inito fr)
+  foldlRO fo inito fr $ Effect msw = Effect $ msw <&> assert_total foldlRO fo inito fr
   foldlRO fo inito fr $ BindR x f  = BindR (foldlRO fo inito (,) x) $ \(into, r') => foldlRO fo into fr $ f r'
   foldlRO fo inito fr $ BindE x h  = BindE (foldlRO fo inito fr x) (foldlRO fo inito fr . h)
   foldlRO fo inito fr $ Ensure l x = Ensure l (foldlRO fo inito (,) x) `BindR` \(r', o', r) => Done $ fr o' (r', r)
@@ -279,7 +275,7 @@ namespace ToOutput
   foldlO'R op init $ Done x     = Done (x, init)
   foldlO'R op init $ Fail e     = Fail (e, init)
   foldlO'R op init $ Yield x sw = foldlO'R op (init `op` x) sw
-  foldlO'R op init $ Effect msw = Effect $ msw <&> mapLazy (assert_total foldlO'R op init)
+  foldlO'R op init $ Effect msw = Effect $ msw <&> assert_total foldlO'R op init
   foldlO'R op init $ BindR x f  = BindR (foldlO'R op init x) $ \(r', into) => foldlO'R op into $ f r'
   foldlO'R op init $ BindE x h  = BindE (foldlO'R op init x) $ \(e, into) => foldlO'R op into $ h e
   foldlO'R op init $ Ensure l x = Ensure l (foldlO'R op init x) `BindR` \(r', r, o') => Done ((r', r), o')
@@ -320,7 +316,7 @@ namespace ComposeResults
   mergeCtxs' ff fi $ Done x     = Done (x, fi)
   mergeCtxs' ff fi $ Fail e     = Fail $ Left e
   mergeCtxs' ff fi $ Yield x sw = mapCtx pure (mapError Right x) `BindR` \lr => mergeCtxs' ff (fi `ff` lr) sw
-  mergeCtxs' ff fi $ Effect msw = Effect $ msw <&> pure . mapLazy (assert_total mergeCtxs' ff fi)
+  mergeCtxs' ff fi $ Effect msw = Effect $ msw <&> pure . assert_total mergeCtxs' ff fi
   mergeCtxs' ff fi $ BindR x f  = BindR (mergeCtxs' ff fi x) $ \(y, ys) => mergeCtxs' ff ys $ f y
   mergeCtxs' ff fi $ BindE x h  = BindE (mergeCtxs' ff fi x) $ either (mergeCtxs' ff fi . h) (Fail . Right)
   mergeCtxs' ff fi $ Ensure l x = Ensure (mapCtx (map pure) l) (mergeCtxs' ff fi x) `BindR` \(rl, rr, rs) => succeed ((rl, rr), rs)
@@ -336,7 +332,7 @@ namespace ComposeResults
   squashOuts' ff fi $ Done x     = Done (x, fi)
   squashOuts' ff fi $ Fail e     = Fail $ Left e
   squashOuts' ff fi $ Yield x sw = mapError Right x `BindR` \lr => squashOuts' ff (fi `ff` lr) sw
-  squashOuts' ff fi $ Effect msw = Effect $ msw <&> mapLazy (assert_total squashOuts' ff fi)
+  squashOuts' ff fi $ Effect msw = Effect $ msw <&> assert_total squashOuts' ff fi
   squashOuts' ff fi $ BindR x f  = BindR (squashOuts' ff fi x) $ \(y, ys) => squashOuts' ff ys $ f y
   squashOuts' ff fi $ BindE x h  = BindE (squashOuts' ff fi x) $ either (squashOuts' ff fi . h) (Fail . Right)
   squashOuts' ff fi $ Ensure l x = Ensure l (squashOuts' ff fi x) `BindR` \(rl, rr, rs) => succeed ((rl, rr), rs)
@@ -380,7 +376,7 @@ mapMaybe f $ Fail e     = Fail e
 mapMaybe f $ Yield x sw = case f x of
                             Nothing => mapMaybe f sw -- no common subexpression, tail recursion instead
                             Just y  => Yield y $ mapMaybe f sw
-mapMaybe f $ Effect msw = Effect $ msw <&> mapLazy (assert_total mapMaybe f)
+mapMaybe f $ Effect msw = Effect $ msw <&> assert_total mapMaybe f
 mapMaybe f $ BindR sw g = BindR (mapMaybe f sw) (mapMaybe f . g)
 mapMaybe f $ BindE sw h = BindE (mapMaybe f sw) (mapMaybe f . h)
 mapMaybe f $ Ensure l x = Ensure l (mapMaybe f x)
@@ -392,7 +388,7 @@ filter f $ Fail e     = Fail e
 filter f $ Yield x sw = case f x of
                           False => filter f sw -- no common subexpression, tail recursion instead
                           True  => Yield x $ filter f sw
-filter f $ Effect msw = Effect $ msw <&> mapLazy (assert_total filter f)
+filter f $ Effect msw = Effect $ msw <&> assert_total filter f
 filter f $ BindR sw g = BindR (filter f sw) (filter f . g)
 filter f $ BindE sw h = BindE (filter f sw) (filter f . h)
 filter f $ Ensure l x = Ensure l (filter f x)
@@ -410,7 +406,7 @@ namespace ComposeResults
 --  interleaveOE (Done x)     sv = mapError Right $ bimap (x,) Right sv
 --  interleaveOE (Fail e)     sv = Fail $ Left e -- maybe, try to continue as much as possible?
 --  interleaveOE (Yield x sw) sv = Yield (Left x) $ mirrorAll $ interleaveOE {m} sv sw
---  interleaveOE (Effect msw) sv = Effect $ msw <&> mapLazy (\sw => mirrorAll $ assert_total $ interleaveOE sv sw)
+--  interleaveOE (Effect msw) sv = Effect $ msw <&> \sw => mirrorAll $ assert_total $ interleaveOE sv sw
 --  interleaveOE (BindR x f)  sv = ?interleave'_rhs_4
 --  interleaveOE (BindE x h)  sv = ?interleave'_rhs_5
 --  interleaveOE (Ensure l x) sv = ?interleave'_rhs_6
@@ -541,7 +537,7 @@ take' Z     sw           = mapError (Z,) $ mapFst (Z,) $ forgetO sw
 take' (S k) $ Yield x sw = Yield x $ take' k sw
 take' n     $ Done x     = Done (n, x)
 take' n     $ Fail e     = Fail (n, e)
-take' n     $ Effect msw = Effect $ msw <&> mapLazy (assert_total take' n)
+take' n     $ Effect msw = Effect $ msw <&> assert_total take' n
 take' n     $ BindR x f  = BindR (take' n x) $ \(n', r') => take' n' $ f r'
 take' n     $ BindE x h  = BindE (take' n x) $ \(n', e') => take' n' $ h e'
 take' n     $ Ensure l x = Ensure l (take' n x) `BindR` \(r', n', r) => Done (n, r', r)
@@ -562,7 +558,7 @@ takeWhile' : Functor m => (o -> Bool) -> Swirl m e r o -> Swirl m (Bool, e) (Boo
 takeWhile' _ $ Done x     = Done (True, x)
 takeWhile' _ $ Fail e     = Fail (True, e)
 takeWhile' w $ Yield x sw = twCont (w x) (Yield x) w sw
-takeWhile' w $ Effect msw = Effect $ msw <&> mapLazy (assert_total takeWhile' w)
+takeWhile' w $ Effect msw = Effect $ msw <&> assert_total takeWhile' w
 takeWhile' w $ BindR x f  = BindR (takeWhile' w x) $ \(ct, r') => twCont ct force w $ f r'
 takeWhile' w $ BindE x h  = BindE (takeWhile' w x) $ \(ct, e') => twCont ct force w $ h e'
 takeWhile' w $ Ensure l x = Ensure l (takeWhile' w x) `BindR` \(r', b', r) => Done (b', r', r)
@@ -578,7 +574,7 @@ drop' Z     sw           = mapError (Z,) $ mapFst (Z,) sw
 drop' (S k) $ Yield x sw = drop' k sw
 drop' n     $ Done x     = Done (n, x)
 drop' n     $ Fail e     = Fail (n, e)
-drop' n     $ Effect msw = Effect $ msw <&> mapLazy (assert_total drop' n)
+drop' n     $ Effect msw = Effect $ msw <&> assert_total drop' n
 drop' n     $ BindR x f  = BindR (drop' n x) $ \(n', r') => drop' n' $ f r'
 drop' n     $ BindE x h  = BindE (drop' n x) $ \(n', e') => drop' n' $ h e'
 drop' n     $ Ensure l x = Ensure l (drop' n x) `BindR` \(r', n', r) => Done (n, r', r)
@@ -601,7 +597,7 @@ dwCont False s _ sw = mapError (False,) $ mapFst (False,) $ s sw
 dropWhile' _ $ Done x     = Done (True, x)
 dropWhile' _ $ Fail e     = Fail (True, e)
 dropWhile' w $ Yield x sw = dwCont (w x) (Yield x) w sw
-dropWhile' w $ Effect msw = Effect $ msw <&> mapLazy (assert_total dropWhile' w)
+dropWhile' w $ Effect msw = Effect $ msw <&> assert_total dropWhile' w
 dropWhile' w $ BindR x f  = BindR (dropWhile' w x) $ \(ct, r') => dwCont ct force w $ f r'
 dropWhile' w $ BindE x h  = BindE (dropWhile' w x) $ \(ct, e') => dwCont ct force w $ h e'
 dropWhile' w $ Ensure l x = Ensure l (dropWhile' w x) `BindR` \(r', b', r) => Done (b', r', r)
@@ -619,7 +615,7 @@ prepO False sep sw = intersperseOuts' sep sw
 intersperseOuts' sep $ Done x     = Done (False, x)
 intersperseOuts' sep $ Fail e     = Fail (False, e)
 intersperseOuts' sep $ Yield x sw = Yield x $ prepO True sep sw
-intersperseOuts' sep $ Effect msw = Effect $ msw <&> mapLazy (assert_total intersperseOuts' sep)
+intersperseOuts' sep $ Effect msw = Effect $ msw <&> assert_total intersperseOuts' sep
 intersperseOuts' sep $ BindR x f  = BindR (intersperseOuts' sep x) $ \(fwas, r') => prepO fwas sep $ f r'
 -- CAUTION! the following `assert_total` has no clear evidence of being valid
 intersperseOuts' sep $ BindE x h  = BindE (assert_total intersperseOuts' (mapError Right sep) (mapError Left x)) $ \(fwas, ee) =>
