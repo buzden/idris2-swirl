@@ -75,6 +75,9 @@ i.e. to make it forget its result or output:
 <!-- idris
 SomeMonad : Type -> Type
 %hint SomeMonadFunctor : Functor SomeMonad
+%hint SomeMonadApplicative : Applicative SomeMonad
+%hint SomeMonadMonad : Monad SomeMonad
+%hint SomeMonadMonadRec : MonadRec SomeMonad
 SomeError, SomeResult, SomeOutput : Type
 -->
 
@@ -199,7 +202,49 @@ because `()` is chosen only when this type is unsolved.
 
 ## Running
 
+Once you have a swirl that cannot raise errors and does not have outputs, you can use the `runSwirl` function.
+Basically, it compiles the swirl down to an underlying monad.
+
+```idris
+r : Swirl SomeMonad Void SomeResult Void -> SomeMonad SomeResult
+r = runSwirl
+```
+
+Why do we require outputs to be `Void` here?
+It is done to ensure you do not lose you data by mistake,
+similarly, say, yo `Monad`'s `(>>)` operation, which takes `m ()` at the left-hand side.
+You can either explicitly forget outputs using `forgetO`,
+or you can fold outputs using [special operations](#foldings),
+or you can [manage outputs](#manage-outputs) by other swirls.
+
+If you don't have all errors managed on the swirl side, you can run it using
+`runSwirlE`, which returns `m (Either e r)` instead of just `m r`,
+since it does not require the error type to be `Void`.
+Despite that, rules for the output type are the same as for `runSwirl`.
+
 ### Stack safety
+
+Both `runSwirl` and `runSwirlE` require the underlying monad to implement the `MonadRec` interface.
+It is a subinterface of the usual `Monad` one defined in the [`tailrec`](https://github.com/stefan-hoeck/idris2-tailrec/) library.
+It describes such monads that support tail-recursive recursion,
+thus allowing is to run long-running monadic processes in a stack-safe manner.
+
+A lot of standard monads, like `IO`, `Identity`, `List`, `Maybe`, `Either` and standard transformers
+like `ReaderT`, `StateT` and `WriterT` support `MonadRec`.
+
+In case if absolutely needed, one can run swirls in a non-stack-safe manner
+for any monad that implements ordinary `Monad` interface.
+For this you can use special `NonStackSafe` implementation as the first `auto`-argument:
+
+```idris
+unsafe : Swirl SomeMonad Void SomeResult Void -> SomeMonad SomeResult
+unsafe = runSwirl @{NonStackSafe}
+```
+
+> **Warning**
+>
+> Please keep in mind that this is highly discouraged and
+> is done mainly for compatibility with monads, for which one cannot have a `MonadRec` implementation.
 
 ## Basic creation
 
