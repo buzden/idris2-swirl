@@ -2,6 +2,7 @@ rm -rf build
 
 flock "$1" pack -q install-deps test.ipkg && \
 idris2 --no-color --console-width 0 --no-banner --find-ipkg --check README.md && \
+idris2 --no-color --console-width 0 --no-banner --find-ipkg README.md < input_repl && \
   grep '^main.* : IO Unit$' README.md | sed 's/ : IO Unit//' | while read main; do
     echo "---------------------------------------"
     echo "--- Running "'`'"$main"'`'

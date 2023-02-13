@@ -1,6 +1,8 @@
 <!-- idris
 module README
 
+import Data.Maybe
+import Data.List
 import Data.Swirl
 
 %default total
@@ -153,6 +155,47 @@ combination = consumer . producer
 > In particular, the output type of the `forgetO` function is handled precisely as the polymorphic parameter above.
 > As another example, `forgetR` has its result type having `IfUnsolved r ()`
 > making it `Unit` by default, or any other `Monoid` on the first demand.
+
+Notice that these "default" types pop out in the context of typed holes.
+This may surprise a little bit during interactive development.
+
+Say, you, for some reason, attempted to you map the result with a function *after* you applied `forgetR` in them
+(you can see more about such combinations in a [special section](#combinations)).
+
+<!-- idris
+namespace HoleWithDefault {
+-->
+
+```idris
+mapped : Swirl SomeMonad SomeError Nat SomeOutput
+mapped = mapFst ?mapping_function $ forgetR someSwirl
+```
+
+<!-- idris
+  }
+-->
+
+If you ask the compiler about the type of the `mapping_function` typed hole, it says `() -> Nat`,
+since `forgetR` maps the result type to `()` *by default*.
+
+But as soon as you try to actually use the result as some other monoid type, say, `List Nat`,
+you can perfectly do it:
+
+<!-- idris
+namespace NonHoleWithNonDefault {
+-->
+
+```idris
+mapped : Swirl SomeMonad SomeError Nat SomeOutput
+mapped = mapFst (fromMaybe 5 . head') $ forgetR someSwirl
+```
+
+<!-- idris
+  }
+-->
+
+Here we have replaced the hole of type `() -> Nat` with an expression of type `List Nat -> Nat` and all typechecks,
+because `()` is chosen only when this type is unsolved.
 
 ## Running
 
