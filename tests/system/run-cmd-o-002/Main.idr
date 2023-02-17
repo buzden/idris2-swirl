@@ -8,4 +8,4 @@ main : IO ()
 main = do
   runSwirl $ handleError (die . show) $
     handleRes (succeed.by . putStrLn . ("[ final ] Exit code: " ++) . show) $
-      succeed.by . putStrLn . ("[ log ] "++) =<<: runSysCmdO ["echo", "-ne", #"abc\ndef"#]
+      succeed.by . putStrLn . ("[ log ] "++) =<<: runSysCmdO ["printf", #"abc\ndef"#]
