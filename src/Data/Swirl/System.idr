@@ -22,8 +22,12 @@ runSysCmdO cmd = mapFst fst $ bracket'
 ||| Run a system command being fed a stream of input strings
 ||| and returning exit code (along with the feeding stream result).
 export
-runSysCmdI : HasIO io => Monoid r => (cmd : List String) -> Swirl io e r String -> Swirl io (Either e FileError) (r, Int) Void
+runSysCmdI : HasIO io => (cmd : List String) -> Swirl io e r String -> Swirl io (Either e FileError) (r, Int) Void
 runSysCmdI cmd sw = mapFst swap $ bracket'
   (mapError Right $ succeedOrFail.by $ popen cmd WriteTruncate)
   (succeed.by . pclose)
   $ \inF => squashOuts' $ sw <&> succeedOrFail.by . fPutStr inF
+
+export
+runSysCmdILn : HasIO io => (cmd : List String) -> Swirl io e r String -> Swirl io (Either e FileError) (r, Int) Void
+runSysCmdILn cmd = runSysCmdI cmd . map (++ "\n")

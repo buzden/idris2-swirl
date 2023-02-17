@@ -345,11 +345,15 @@ squashOuts : Functor m => Semigroup r => Swirl m e r (Swirl m e r o) -> Swirl m 
 squashOuts = mapFst mergeSemi . mapError fromEither . squashOuts' (\a, x => (a <+> Just x) @{Deep}) Nothing
 
 -- Unlike the `BindR` constuctor, this function is significantly not lazy on its first argument.
-%inline
+export %inline
 bindR : Swirl m e r' o -> (r' -> Swirl m e r o) -> Swirl m e r o
 bindR (Done x) f = f x
 bindR (Fail e) _ = Fail e
 bindR sw       f = BindR sw f
+
+export %inline
+handleRes : (r' -> Swirl m e r o) -> Swirl m e r' o -> Swirl m e r o
+handleRes = flip bindR
 
 squashRes : Swirl m e (Swirl m e r o) o -> Swirl m e r o
 squashRes sw = sw `bindR` id
@@ -428,6 +432,21 @@ Functor m => Monoid r => Applicative (Swirl m e r) where
 export
 Functor m => Monoid r => Monad (Swirl m e r) where
   join = squashOuts
+
+-- particular cases of monad combinators, ignoring the result
+infixl 1 :>>=, =<<:, :>>
+
+export %inline
+(=<<:) : Functor m => (o' -> Swirl m e () o) -> Swirl m e r o' -> Swirl m e r o
+(=<<:) = mapError fromEither .: squashOuts' .: mapSnd
+
+export %inline
+(:>>=) : Functor m => Swirl m e r o' -> (o' -> Swirl m e () o) -> Swirl m e r o
+(:>>=) = flip (=<<:)
+
+export %inline
+(:>>) : Functor m => Swirl m e r () -> Lazy (Swirl m e () o) -> Swirl m e r o
+(:>>) sw sv = mapError fromEither $ squashOuts' $ mapSnd (const sv) sw
 
 export
 HasIO io => Monoid r => HasIO (Swirl io e r) where
