@@ -337,6 +337,7 @@ namespace ComposeResults
   squashOuts' ff fi $ BindE x h  = BindE (squashOuts' ff fi x) $ either (squashOuts' ff fi . h) (Fail . Right)
   squashOuts' ff fi $ Ensure l x = Ensure l (squashOuts' ff fi x) `BindR` \(rl, rr, rs) => succeed ((rl, rr), rs)
 
+export
 squashOuts' : Functor m => Swirl m e r (Swirl m e' () o) -> Swirl m (Either e e') r o
 squashOuts' = mapFst fst . squashOuts' (const id) ()
 
