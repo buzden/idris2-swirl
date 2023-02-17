@@ -1,5 +1,5 @@
 #!/bin/sh
-read r
+read -r r
 echo "1: $r"
-read r
+read -r r
 echo "2: $r"
