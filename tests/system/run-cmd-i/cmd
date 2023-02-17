@@ -1,0 +1,5 @@
+#!/bin/sh
+read r
+echo "1: $r"
+read r
+echo "2: $r"

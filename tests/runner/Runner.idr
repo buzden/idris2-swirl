@@ -13,4 +13,5 @@ main = goldenRunner
   , "File API" `atDir` "file"
   , "Console API" `atDir` "console"
   , "Finalising and bracketing" `atDir` "bracket"
+  , "Running system commands" `atDir` "system"
   ]
