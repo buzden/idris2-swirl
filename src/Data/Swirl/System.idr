@@ -14,5 +14,7 @@ import public System.File.Error
 ||| and returning exit code as the result value.
 export covering
 runSysCmd : HasIO io => (cmd : List String) -> Swirl io FileError Int String
-runSysCmd cmd =
-  (succeedOrFail.by (popen cmd Read) >>= \f => (readAsLines f >> succeed.by (pclose f)) @{ByResult}) @{ByResult}
+runSysCmd cmd = mapFst fst $ bracket'
+  (succeedOrFail.by $ popen cmd Read)
+  (succeed.by . pclose)
+  readAsLines
