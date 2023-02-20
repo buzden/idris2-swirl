@@ -648,6 +648,22 @@ export
 intersperseOuts : Functor m => (sep : Swirl m e () o) -> Swirl m e r o -> Swirl m e r o
 intersperseOuts = mapError snd .: mapFst snd .: intersperseOuts'
 
+export
+iterateAlong : Functor m => (i -> i) -> i -> Swirl m e r o -> Swirl m e r (i, o)
+iterateAlong next = mapError snd .: mapFst snd .: go where
+  go : forall e, r. i -> Swirl m e r o -> Swirl m (i, e) (i, r) (i, o)
+  go n $ Done x     = Done (n, x)
+  go n $ Fail e     = Fail (n, e)
+  go n $ Yield x sw = Yield (n, x) $ go (next n) sw
+  go n $ Effect msw = Effect $ msw <&> assert_total go n
+  go n $ BindR x f  = go n x `BindR` \(n', r') => go n' $ f r'
+  go n $ BindE x h  = go n x `BindE` \(n', e') => go n' $ h e'
+  go n $ Ensure l x = Ensure l (go n x) `BindR` \(r', i, r) => Done (i, r', r)
+
+export %inline
+zipWithIndex : Functor m => Swirl m e r o -> Swirl m e r (Nat, o)
+zipWithIndex = iterateAlong S Z
+
 --- Eliminators ---
 
 --toLazyList : Swirl Identity e r o -> (Either e r, LazyList o)
