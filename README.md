@@ -231,6 +231,7 @@ thus allowing is to run long-running monadic processes in a stack-safe manner.
 
 A lot of standard monads, like `IO`, `Identity`, `List`, `Maybe`, `Either` and standard transformers
 like `ReaderT`, `StateT` and `WriterT` support `MonadRec`.
+Usually, you can implement `MonadRec` for your own monads.
 
 In case if absolutely needed, one can run swirls in a non-stack-safe manner
 for any monad that implements ordinary `Monad` interface.
