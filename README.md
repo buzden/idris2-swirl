@@ -48,12 +48,13 @@ which may produce zero or more values of type `o` along its execution,
 and which results either with a value of type `r` or an error of type `e`.
 
 It can be thought as a (potentially) long-running process with intermediate and final results (`o` and `r` respectively).
-<!-- TODO some good example here? -->
 
 Also, it can be thought as a lazy collection of type `o`,
 which elements can be retrieved sequentially in the context of a monad `m`.
 
 > For example, contents of a whole file can be represented by a `Swirl IO FileError () String`.
+> Once you've created this collection, the file is not read until this swirl is traversed.
+>
 > Also, `Swirl Identity Void () a` is essentially equivalent to a `LazyList a`.
 
 ### Special cases
