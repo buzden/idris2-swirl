@@ -26,12 +26,20 @@ A library for streams of monadic actions
   * [Getting rid of "unsolved type"](#solving-the-unsolved-type-problem)
   * [Interactive editing and typed holes](#defaulting-and-typed-holes)
 * [Running](#running)
-* [On stack safety](#stack-safety)
+  * [On stack safety](#stack-safety)
 * [Creation](#basic-creation)
+  * [Emitting output](#emitting-output-values)
+  * [Succeeding and failing](#finishing-the-swirl)
+  * [Conditional failure](#conditional-failure)
+  * [All that with effects](#effectful-emitting-and-finishing)
 * [Composition](#combinations)
 * [Foldings](#foldings)
 * [Error handling](#error-handling-and-bracket-pattern)
+  * [Throwing and catching](#throwing-and-catching)
+  * [Bracket pattern](#ensuring-resource-releasing)
 * [On design](#design)
+  * [On API](#design-of-api)
+  * [Internal structure](#global-questions)
 
 ## What is swirl anyway?
 
