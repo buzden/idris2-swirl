@@ -184,6 +184,14 @@ emits : Monoid r =>
         Swirl m e r o
 emits = preEmitsTo $ Done neutral
 
+--export %inline
+--preEmitMsTo : Functor m =>
+--              (0 _ : IfUnsolved e Void) =>
+--              Lazy (Swirl m e r o) ->
+--              LazyList (m o) ->
+--              Swirl m e r o
+--preEmitMsTo = foldrLazy $ \mx, xs => Effect $ mx <&> \x => Yield x xs
+
 -- Result --
 
 export %inline
@@ -229,6 +237,16 @@ emitRes : Functor m =>
           (0 _ : IfUnsolved r ()) =>
           Swirl m e r' Void -> Swirl m e r r'
 emitRes = emitRes' $ const neutral
+
+export
+swallowM : Functor m => Swirl m e r (m o) -> Swirl m e r o
+swallowM $ Done x     = Done x
+swallowM $ Fail e     = Fail e
+swallowM $ Yield x sw = Effect $ x <&> \x' => Yield x' $ swallowM sw
+swallowM $ Effect msw = Effect $ msw <&> assert_total swallowM
+swallowM $ BindR sw g = BindR (swallowM sw) (swallowM . g)
+swallowM $ BindE sw h = BindE (swallowM sw) (swallowM . h)
+swallowM $ Ensure l x = Ensure l $ swallowM x
 
 --- Internal foldings ---
 
