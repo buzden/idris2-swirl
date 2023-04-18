@@ -153,6 +153,12 @@ export %inline
 (.by) : Functor m => (x -> Swirl m e r o) -> m x -> Swirl m e r o
 f.by = Effect . map f
 
+export %inline
+by : Functor m => (x -> Swirl m e r o) -> m x -> Swirl m e r o
+by = (.by)
+
+infix 0 `by`
+
 -- Output --
 
 export %inline
@@ -183,6 +189,25 @@ emits : Monoid r =>
         LazyList o ->
         Swirl m e r o
 emits = preEmitsTo $ Done neutral
+
+export %inline
+preEmitsTo' : Foldable f =>
+              (0 _ : IfUnsolved e Void) =>
+              (0 _ : IfUnsolved f List) =>
+              Lazy (Swirl m e r o) ->
+              f o ->
+              Swirl m e r o
+preEmitsTo' = force .: foldr (delay .: Yield)
+
+export %inline
+emits' : Monoid r =>
+         Foldable f =>
+         (0 _ : IfUnsolved e Void) =>
+         (0 _ : IfUnsolved f List) =>
+         (0 _ : IfUnsolved r ()) =>
+         f o ->
+         Swirl m e r o
+emits' = preEmitsTo' $ Done neutral
 
 --export %inline
 --preEmitMsTo : Functor m =>
