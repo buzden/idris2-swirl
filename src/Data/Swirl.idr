@@ -720,23 +720,20 @@ zipWithIndex = iterateAlong S Z
 
 export
 toLazyList' : Swirl Identity e r o -> (Either e r, Lazy (LazyList o))
-toLazyList' $ Done x       = (Right x, [])
-toLazyList' $ Fail e       = (Left e, [])
-toLazyList' $ Yield x sw   = (x ::) <$> toLazyList' sw
-toLazyList' e@(Effect msw) = toLazyList' $ assert_smaller e $ runIdentity msw
-toLazyList' $ BindR x f    = do
-  let (ir, ll) = toLazyList' x
-  case ir of
-    Left  e => (Left e, ll)
-    Right r => toLazyList' (f r) <&> \rr => ll ++ rr
-toLazyList' $ BindE x h    = do
-  let (ir, ll) = toLazyList' x
-  case ir of
-    Left e  => toLazyList' (h e) <&> \rr => ll ++ rr
-    Right r => (Right r, ll)
-toLazyList' $ Ensure l x   = do
-  let (Right r', Delay []) = toLazyList' l
-  map (r',) `mapFst` toLazyList' x
+toLazyList' $ Done x         = (Right x, [])
+toLazyList' $ Fail e         = (Left e, [])
+toLazyList' $ Yield x sw     = (x ::) <$> toLazyList' sw
+toLazyList' $ Effect $ Id sw = toLazyList' sw
+toLazyList' $ BindR x f      = let (ir, ll) = toLazyList' x in
+                               case ir of
+                                 Left  e => (Left e, ll)
+                                 Right r => toLazyList' (f r) <&> \rr => ll ++ rr
+toLazyList' $ BindE x h      = let (ir, ll) = toLazyList' x in
+                               case ir of
+                                 Left e  => toLazyList' (h e) <&> \rr => ll ++ rr
+                                 Right r => (Right r, ll)
+toLazyList' $ Ensure l x     = let (Right r', Delay []) = toLazyList' l in
+                               map (r',) `mapFst` toLazyList' x
 
 export %inline
 toLazyList : Swirl Identity Void () o -> LazyList o
