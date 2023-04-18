@@ -156,26 +156,33 @@ f.by = Effect . map f
 -- Output --
 
 export %inline
+preEmitTo : (0 _ : IfUnsolved e Void) =>
+            Lazy (Swirl m e r o) ->
+            o ->
+            Swirl m e r o
+preEmitTo = flip Yield
+
+export %inline
 emit : Monoid r =>
        (0 _ : IfUnsolved e Void) =>
        (0 _ : IfUnsolved r ()) =>
        o -> Swirl m e r o
-emit x = Yield x $ Done neutral
+emit = preEmitTo $ Done neutral
 
-export
-preEmits : (0 _ : IfUnsolved e Void) =>
-           Swirl m e r o ->
-           LazyList o ->
-           Swirl m e r o
-preEmits = foldrLazy Yield . delay
+export %inline
+preEmitsTo : (0 _ : IfUnsolved e Void) =>
+             Lazy (Swirl m e r o) ->
+             LazyList o ->
+             Swirl m e r o
+preEmitsTo = foldrLazy Yield
 
-export
+export %inline
 emits : Monoid r =>
         (0 _ : IfUnsolved e Void) =>
         (0 _ : IfUnsolved r ()) =>
         LazyList o ->
         Swirl m e r o
-emits = preEmits $ Done neutral
+emits = preEmitsTo $ Done neutral
 
 -- Result --
 
