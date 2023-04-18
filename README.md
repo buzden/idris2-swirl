@@ -1,9 +1,14 @@
 <!-- idris
 module README
 
+import Control.Monad.Writer.Interface
+
 import Data.Maybe
 import Data.List
+import Data.List.Lazy
 import Data.Swirl
+
+import System
 
 %default total
 -->
@@ -16,6 +21,10 @@ A library for streams of monadic actions
 
 * [Terminology](#what-is-swirl-anyway)
 * [Type alignments](#type-alignments)
+* Polymorphism in API design
+  * [When API is more polymorphic than could](#defaulting-throughout-the-api)
+  * [Getting rid of "unsolved type"](#solving-the-unsolved-type-problem)
+  * [Interactive editing and typed holes](#defaulting-and-typed-holes)
 * [Running](#running)
 * [On stack safety](#stack-safety)
 * [Creation](#basic-creation)
@@ -159,6 +168,8 @@ combination = consumer . producer
 > As another example, `forgetR` has its result type having `IfUnsolved r ()`
 > making it `Unit` by default, or any other `Monoid` on the first demand.
 
+### Defaulting and typed holes
+
 Notice that these "default" types pop out in the context of typed holes.
 This may surprise a little bit during interactive development.
 
@@ -190,7 +201,7 @@ namespace NonHoleWithNonDefault {
 
 ```idris
 mapped : Swirl SomeMonad SomeError Nat SomeOutput
-mapped = mapFst (fromMaybe 5 . head') $ forgetR someSwirl
+mapped = mapFst (fromMaybe 5 . List.head') $ forgetR someSwirl
 ```
 
 <!-- idris
@@ -206,8 +217,8 @@ Once you have a swirl that cannot raise errors and does not have outputs, you ca
 Basically, it compiles the swirl down to an underlying monad.
 
 ```idris
-r : Swirl SomeMonad Void SomeResult Void -> SomeMonad SomeResult
-r = runSwirl
+run : Swirl SomeMonad Void SomeResult Void -> SomeMonad SomeResult
+run = runSwirl
 ```
 
 Why do we require outputs to be `Void` here?
@@ -226,7 +237,7 @@ Despite that, rules for the output type are the same as for `runSwirl`.
 
 Both `runSwirl` and `runSwirlE` require the underlying monad to implement the `MonadRec` interface.
 It is a subinterface of the usual `Monad` one defined in the [`tailrec`](https://github.com/stefan-hoeck/idris2-tailrec/) library.
-It describes such monads that support tail-recursive recursion,
+It describes such monads that support tail recursion,
 thus allowing is to run long-running monadic processes in a stack-safe manner.
 
 A lot of standard monads, like `IO`, `Identity`, `List`, `Maybe`, `Either` and standard transformers
@@ -248,6 +259,119 @@ unsafe = runSwirl @{NonStackSafe}
 > is done mainly for compatibility with monads, for which one cannot have a `MonadRec` implementation.
 
 ## Basic creation
+
+### Emitting output values
+
+One of the simplest ways of creating a swirl is to emit a single output value:
+
+```idris
+singleEleven : Swirl SomeMonad Void () Nat
+singleEleven = emit 11
+```
+
+> **Note**
+>
+> Recall that instead of `Void` you can use any type,
+> and instead of `()` you can use any monoid.
+>
+> All such API functions are polymorphic and [have these types as defaults](#defaulting-throughout-the-api).
+
+If you want to emit several values at once, you can use `emits` function:
+
+```idris
+threeElevens : Swirl SomeMonad Void () Nat
+threeElevens = emits [11, 11, 11]
+```
+
+Notice that `emits` takes a lazy list at the input.
+There is an eager version called `emits'`, which takes any `Foldable`.
+
+> **Note**
+>
+> If you want to emit values produced with an effect, see [this part](#effectful-emitting-and-finishing).
+
+Functions described above produce a swirl that ends with a neutral element of a monoid.
+If you want to end the produces swirl by some another swirl after the emittings,
+you can use their generalised variants:
+
+```idris
+prependEleven : Lazy (Swirl SomeMonad e r Nat) -> Swirl SomeMonad e r Nat
+prependEleven sw = preEmitTo sw 11
+```
+
+```idris
+prependElevens : Lazy (Swirl SomeMonad e r Nat) -> Swirl SomeMonad e r Nat
+prependElevens sw = preEmitsTo sw [11, 11, 11]
+```
+
+### Finishing the swirl
+
+Swirls end with a result or an error value.
+Consequently, there are functions that produce successfully or non-successfully ending swirls.
+
+```idris
+succeedsInTwelve : Swirl SomeMonad Void Nat Void
+succeedsInTwelve = succeed 12
+```
+
+```idris
+failsInThirteen : Swirl SomeMonad Nat Void Void
+failsInThirteen = fail 13
+```
+
+Notice that in the failure case the resulting type may be `Void`,
+showing that there is not way this swirl can return a resulting values.
+As with all other polymorphic API of this type, you can use any any in the place of `Void` when using `succeed` or `fail`.
+
+> **Note**
+>
+> If you have the result or failure value produced in an effect, see [this part](#effectful-emitting-and-finishing).
+
+### Conditional failure
+
+If you have an immediate `Either` value for containing either a result value or a failure value, you can use `succeedOrFail` function.
+
+Similar function for emitting-or-failing exists and is called `emitOrFail`.
+Notice that this function requires a `Monoid` for the resulting type, as `emit` does,
+since when it is not failing, there is a need to provide successful end of the swirl.
+
+### Effectful emitting and finishing
+
+All basic creation operations described above take pure values as their main arguments.
+Say, `emit` takes a pure output value, `succeed` takes a pure result value and `fail` takes a pure error value.
+
+Since swirl is an effectful collection of values, there may be a need to take such values in an appropriate monadic context.
+
+For this universal functions called `(.by)` and `by` exist, and here how they can be used:
+
+```idris
+emitTelling : MonadWriter String m => Swirl m Void () Nat
+emitTelling = emit.by $ do
+  tell "while emitting a number"
+  pure 11
+```
+
+```idris
+emitInputAndMore : HasIO m => Swirl m Void () String
+emitInputAndMore = preEmitTo (emits ["second", "third"]) `by` getLine
+  -- Here the resulting swirl would at first emit the result of reading from the console,
+  -- and then constant strings `"second"` and `"third"`.
+```
+
+```idris
+args : HasIO m => Swirl m Void () String
+args = emits'.by getArgs
+```
+
+There is also a similar, but distinct approach of constructing an effectful swirl,
+which looks like traversing a lazy list of effectful actions.
+Say, you cannot have `m (LazyList a)` having a `LazyList (m a)` without losing the laziness.
+But you can get a swirl over `m` using emitting and `swallowM`:
+
+```idris
+aLaLazySequence : Functor m => LazyList (m a) -> Swirl m Void () a
+aLaLazySequence = swallowM . emits
+```
 
 ## Combinations
 
@@ -273,8 +397,16 @@ unsafe = runSwirl @{NonStackSafe}
 
 ## Design
 
+### Design of API
+
+<!-- Copy here "discussion" comment from the `Swirl.idr` -->
+
+### Global questions
+
 <!-- credits for influence of a design to fs2 and GHC's streams -->
 
 <!-- can swirls be run in parallel? -->
 
 <!-- can swirls hold asynchrony? -->
+
+<!-- ## Installation -->
