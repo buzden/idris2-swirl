@@ -57,7 +57,7 @@ which elements can be retrieved sequentially in the context of a monad `m`.
 >
 > Also, `Swirl Identity Void () a` is essentially equivalent to a `LazyList a`.
 
-### Special cases
+### Special cases with `Void`
 
 As you can see, you can use `Void` data type to disable particular "channel" of information and control.
 
@@ -82,6 +82,34 @@ you can use the `Unit` type (which can be written as `()`, as in couple examples
 Usage of `Void` as the output type effectively simply turns out this facility,
 turning such `Swirl` into an analogue of `EitherT e m r`
 with extended [error handling](#error-handling-and-bracket-pattern) facilities.
+
+### Special case of `Swirlie`
+
+When `Swirl` is used mostly as a stream, the result value is not significant, but should be present (unlike previously shown `Void` case).
+Most useful type here is thought to be `Unit`, or `()`.
+
+For this a type synonym `Swirlie` is created.
+`Swirlie m e o` is purely `Swirl m e () o`.
+
+> **Note**
+>
+> Thus, an example above of the whole file can be represented shortly as `Swirlie IO FileError String`.
+> Equivalent of `LazyList a` would be `Swirlie Identity Void a`
+
+### Result-biased variant
+
+`Swirl` type is output-biased.
+Sometimes, one need to have a result-biased type instead.
+
+There is a type `Whirl m e o r`, which is, in fact, an equivalent of `Swirl m e r o`,
+i.e. it is the same except for the order of type arguments.
+
+There are conversion functions `toWhirl` and `toSwirl` to convert the both ways.
+These conversions are meant to be zero-cost.
+
+Also, analogous to `Swirlie`, there is a special case `Whirlie m e r`,
+which is a synonym to `Whirl m e Void r`,
+i.e. this is a `Whirl` which does not emit output values.
 
 ## Type alignments
 
