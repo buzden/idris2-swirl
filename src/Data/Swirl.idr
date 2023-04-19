@@ -14,6 +14,10 @@ import public Language.Implicits.IfUnsolved
 
 %default total
 
+-------------
+--- Swirl ---
+-------------
+
 export
 data Swirl : (Type -> Type) -> (error, result, output : Type) -> Type where
   Done   : r -> Swirl m e r o
@@ -795,3 +799,55 @@ runSwirlE sw = trWellFounded (sw `AtCtx` []) () $ \sw, () => case sw of
 export
 runSwirl : MonadRec m => Swirl m Void a Void -> m a
 runSwirl = map (\(Right x) => x) . runSwirlE
+
+-------------
+--- Whirl ---
+-------------
+
+export
+data Whirl : (Type -> Type) -> (error, output, result : Type) -> Type where
+  MkWhirl : Swirl m e r o -> Whirl m e o r
+
+%name Whirl wh, wi, wj
+
+public export %inline
+Whirlie : (Type -> Type) -> (error, result : Type) -> Type
+Whirlie m e = Whirl m e Void
+
+export %inline
+toWhirl : Swirl m e r o -> Whirl m e o r
+toWhirl = MkWhirl
+
+export %inline
+toSwirl : Whirl m e o r -> Swirl m e r o
+toSwirl $ MkWhirl sw = sw
+
+export %inline
+mapAsSwirl : (Swirl m e r o -> Swirl m' e' r' o') -> Whirl m e o r -> Whirl m' e' o' r'
+mapAsSwirl f = toWhirl . f . toSwirl
+
+export %inline
+apAsSwirl : (Swirl m1 e1 r1 o1 -> Swirl m2 e2 r2 o2 -> Swirl m e r o) -> Whirl m1 e1 o1 r1 -> Whirl m2 e2 o2 r2 -> Whirl m e o r
+apAsSwirl f x y = toWhirl $ f (toSwirl x) (toSwirl y)
+
+export %inline
+Functor m => Bifunctor (Whirl m e) where
+  bimap = mapAsSwirl .: flip bimap
+
+export %inline
+Functor m => Functor (Whirl m e o) where
+  map = mapAsSwirl . map @{ByResult}
+
+export %inline
+Functor m => Applicative (Whirl m e o) where
+  pure = toWhirl . pure @{ByResult}
+  (<*>) = apAsSwirl $ (<*>) @{ByResult}
+
+export %inline
+Functor m => Monad (Whirl m e o) where
+  join = mapAsSwirl (join @{ByResult}) . map toSwirl
+  x >>= f = toWhirl $ (>>=) @{ByResult} (toSwirl x) (toSwirl . f)
+
+export %inline
+HasIO m => HasIO (Whirl m e o) where
+  liftIO = toWhirl . liftIO @{ByResult}
