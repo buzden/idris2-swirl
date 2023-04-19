@@ -6,7 +6,9 @@ import Data.List1
 import Data.Maybe
 import Data.These
 
+import Control.Monad.Error.Interface
 import Control.Monad.Identity
+import Control.Monad.Trans
 import public Control.MonadRec
 import Control.WellFounded
 
@@ -506,9 +508,18 @@ export %inline
 (:>>) : Functor m => Swirl m e r () -> Lazy (Swirl m e () o) -> Swirl m e r o
 (:>>) sw sv = mapError fromEither $ squashOuts' $ mapSnd (const sv) sw
 
-export
+export %inline
 HasIO io => Monoid r => HasIO (Swirl io e r) where
   liftIO = emit.by . liftIO
+
+export %inline
+Monoid r => MonadTrans (\m => Swirl m e r) where
+  lift = emit.by
+
+export %inline
+Functor m => Monoid r => MonadError e (Swirl m e r) where
+  throwError = Fail
+  catchError = BindE . delay
 
 -- Implementations over the second type argument --
 
@@ -536,10 +547,24 @@ namespace Monad
 
 namespace HasIO
 
-  export
+  export %inline
   [ByResult] HasIO io => HasIO (\r => Swirl io e r o)
     using Monad.ByResult where
       liftIO = succeed.by . liftIO
+
+namespace MonadTrans
+
+  export %inline
+  [ByResult] MonadTrans (\m, r => Swirl m e r o) where
+    lift = succeed.by
+
+namespace MonadError
+
+  export %inline
+  [ByResult] Functor m => MonadError e (\r => Swirl m e r o)
+    using Monad.ByResult where
+      throwError = Fail
+      catchError = BindE . delay
 
 --- Error handling ---
 
@@ -851,3 +876,12 @@ Functor m => Monad (Whirl m e o) where
 export %inline
 HasIO m => HasIO (Whirl m e o) where
   liftIO = toWhirl . liftIO @{ByResult}
+
+export %inline
+MonadTrans (\m => Whirl m e o) where
+  lift = toWhirl . lift @{ByResult}
+
+export %inline
+Functor m => MonadError e (Whirl m e o) where
+  throwError = toWhirl . throwError @{ByResult}
+  catchError wh h = toWhirl $ catchError @{ByResult} (toSwirl wh) (toSwirl . h)
