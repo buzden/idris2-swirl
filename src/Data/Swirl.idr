@@ -26,6 +26,10 @@ data Swirl : (Type -> Type) -> (error, result, output : Type) -> Type where
 
 %name Swirl sw, sv, su
 
+public export %inline
+Swirlie : (Type -> Type) -> (error, output : Type) -> Type
+Swirlie m e = Swirl m e ()
+
 -- Discussion:
 --
 -- - `Effect` constructor.
