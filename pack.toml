@@ -1,6 +1,3 @@
-[install]
-whitelist = [ "swirl-tests" ]
-
 [custom.all.swirl]
 type = "local"
 path = "."

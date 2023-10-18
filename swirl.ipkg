@@ -7,6 +7,7 @@ brief = "Swirls, streams of monadic actions"
 version = 0.1.0
 
 sourcedir = "src"
+builddir = ".build"
 
 depends = if-unsolved-implicit
         , tailrec
