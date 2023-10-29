@@ -613,6 +613,21 @@ bracketO : Functor m =>
            Swirl m e r res
 bracketO init cleanup = bimap fst snd $ emitRes' id $ bracket' init cleanup succeed
 
+--- Parsing ---
+
+-- TODO to think of a folding function that rejects getting the current element, i.e. stops folding with no consumption
+-- TODO to think of a mechanism, allowing the common state between successive mini-folds
+-- TODO to add a documantation example, say, by a swirl of chars produce a swirl of strings separated by EOL
+parseOnce : (suddenFin : oi -> r -> Swirl m e r' o') ->
+            (foldOrStop : o -> oi -> Either oi $ Swirl m e () o') ->
+            (init : oi) ->
+            Swirl m e r o -> Swirl m e (Swirl m e r' o) o'
+
+parseAll : (manageFin : oi -> r -> Swirl m e r' o') ->
+           (foldOrStop : o -> oi -> Either oi $ Swirl m e () o') ->
+           (eachInit : oi) ->
+           Swirl m e r o -> Swirl m e r' o'
+
 --- Processes ---
 
 export covering
