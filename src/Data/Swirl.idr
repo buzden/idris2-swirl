@@ -668,8 +668,8 @@ parseAll : Functor m =>
            Parser m e' r r' o o' ->
            Swirl m e r o -> Swirl m (Either e e') r' o'
 parseAll pr sw = (parseAll' sw >>= mapError Right . uncurry pr.manageFin) @{ByResult} where
-  pr' : ?
-  pr' = MkParser pr.initSeed pr.parseStep $ curry succeed
+  pr' : Parser m e' r (pr.SeedTy, r) o o'
+  pr' = {manageFin := curry succeed} pr
 
   parseAll' : Swirl m e r o -> Swirl m (Either e e') (pr.SeedTy, r) o'
   parseAll' sw = (parseOnce pr' sw >>= \case
