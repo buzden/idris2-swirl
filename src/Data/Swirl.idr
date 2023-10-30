@@ -137,6 +137,19 @@ andThen sw sv = BindR sw $ const sv
 
 infixl 1 `andThen` -- as `>>`
 
+--- Basic analysis ---
+
+||| Checks is the only thing left for the given swirl is just to succeed, without any additional actions
+|||
+||| Returns the same swirl (with possibly changed parameters) is yes, and `Nothing` if no.
+export
+hasSucceeded : (0 _ : IfUnsolved m' m) =>
+               (0 _ : IfUnsolved e' Void) =>
+               (0 _ : IfUnsolved o' Void) =>
+               Swirl m e r o -> Maybe $ Swirl m' e' r o'
+hasSucceeded $ Done x = Just $ Done x
+hasSucceeded _        = Nothing
+
 --- Forgetting ---
 
 export
@@ -629,8 +642,9 @@ Functor WhetherConsumeLast where
 
 public export
 record Parser m e r r' o o' where
+  [search o' o]
   constructor MkParser
-  0 SeedTy  : Type
+  {0 SeedTy : Type}
   initSeed  : SeedTy
   parseStep : o -> SeedTy -> Either SeedTy $ WhetherConsumeLast $ Swirl m e () o'
   manageFin : SeedTy -> r -> Swirl m e r' o'
@@ -639,7 +653,7 @@ record Parser m e r r' o o' where
 
 export
 Functor m => Functor (Parser m e r r' o) where
-  map f $ MkParser ty is ps mf = MkParser ty is (map @{Compose} (mapSnd f) .: ps) (mapSnd f .: mf)
+  map f $ MkParser is ps mf = MkParser is (map @{Compose} (mapSnd f) .: ps) (mapSnd f .: mf)
 
 export
 parseOnce : (0 _ : IfUnsolved r' ()) =>
@@ -648,10 +662,20 @@ parseOnce : (0 _ : IfUnsolved r' ()) =>
             Swirl m e r o -> Swirl m e (Swirl m e r' o) o'
 
 export
-parseAll : (0 _ : IfUnsolved r' ()) =>
+parseAll : Functor m =>
+           (0 _ : IfUnsolved r' ()) =>
            (0 _ : IfUnsolved o' Void) =>
            Parser m e r r' o o' ->
            Swirl m e r o -> Swirl m e r' o'
+parseAll pr sw = (parseAll' sw >>= uncurry pr.manageFin) @{ByResult} where
+  pr' : ?
+  pr' = MkParser pr.initSeed pr.parseStep $ curry succeed
+
+  parseAll' : Swirl m e r o -> Swirl m e (pr.SeedTy, r) o'
+  parseAll' sw = (parseOnce pr' sw >>= \case
+                   Done x => Done x
+                   nextSw => parseAll' $ assert_smaller sw $ mapFst snd nextSw
+                 ) @{ByResult}
 
 --- Processes ---
 
