@@ -659,7 +659,7 @@ export
 parseOnce : (0 _ : IfUnsolved r' ()) =>
             (0 _ : IfUnsolved o' Void) =>
             Parser m e' r r' o o' ->
-            Swirl m e r o -> Swirl m e' (Swirl m e r' o) o'
+            Swirl m e r o -> Swirl m (Either e e') (Either r' $ Swirl m e r o) o'
 
 export
 parseAll : Functor m =>
@@ -667,14 +667,14 @@ parseAll : Functor m =>
            (0 _ : IfUnsolved o' Void) =>
            Parser m e' r r' o o' ->
            Swirl m e r o -> Swirl m (Either e e') r' o'
-parseAll pr sw = (parseAll' (mapError Left sw) >>= mapError Right . uncurry pr.manageFin) @{ByResult} where
+parseAll pr sw = (parseAll' sw >>= mapError Right . uncurry pr.manageFin) @{ByResult} where
   pr' : ?
-  pr' = MkParser pr.initSeed (map @{Compose} (mapError Right) .: pr.parseStep) $ curry $ succeed {e=Either e e'}
+  pr' = MkParser pr.initSeed pr.parseStep $ curry succeed
 
-  parseAll' : Swirl m (Either e e') r o -> Swirl m (Either e e') (pr.SeedTy, r) o'
+  parseAll' : Swirl m e r o -> Swirl m (Either e e') (pr.SeedTy, r) o'
   parseAll' sw = (parseOnce pr' sw >>= \case
-                   Done x => Done x
-                   nextSw => parseAll' $ assert_smaller sw $ mapFst snd nextSw
+                   Left x       => Done x
+                   Right nextSw => parseAll' $ assert_smaller sw nextSw
                  ) @{ByResult}
 
 --- Processes ---
