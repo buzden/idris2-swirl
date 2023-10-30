@@ -641,37 +641,37 @@ Functor WhetherConsumeLast where
   map f $ DoNotConsumeLast x = DoNotConsumeLast $ f x
 
 public export
-record Parser m e r r' o o' where
+record Parser m e' r r' o o' where
   [search o' o]
   constructor MkParser
   {0 SeedTy : Type}
   initSeed  : SeedTy
-  parseStep : o -> SeedTy -> Either SeedTy $ WhetherConsumeLast $ Swirl m e () o'
-  manageFin : SeedTy -> r -> Swirl m e r' o'
+  parseStep : o -> SeedTy -> Either SeedTy $ WhetherConsumeLast $ Swirl m e' () o'
+  manageFin : SeedTy -> r -> Swirl m e' r' o'
 
 %name Parser pr, ps
 
 export
-Functor m => Functor (Parser m e r r' o) where
+Functor m => Functor (Parser m e' r r' o) where
   map f $ MkParser is ps mf = MkParser is (map @{Compose} (mapSnd f) .: ps) (mapSnd f .: mf)
 
 export
 parseOnce : (0 _ : IfUnsolved r' ()) =>
             (0 _ : IfUnsolved o' Void) =>
-            Parser m e r r' o o' ->
-            Swirl m e r o -> Swirl m e (Swirl m e r' o) o'
+            Parser m e' r r' o o' ->
+            Swirl m e r o -> Swirl m e' (Swirl m e r' o) o'
 
 export
 parseAll : Functor m =>
            (0 _ : IfUnsolved r' ()) =>
            (0 _ : IfUnsolved o' Void) =>
-           Parser m e r r' o o' ->
-           Swirl m e r o -> Swirl m e r' o'
-parseAll pr sw = (parseAll' sw >>= uncurry pr.manageFin) @{ByResult} where
+           Parser m e' r r' o o' ->
+           Swirl m e r o -> Swirl m (Either e e') r' o'
+parseAll pr sw = (parseAll' (mapError Left sw) >>= mapError Right . uncurry pr.manageFin) @{ByResult} where
   pr' : ?
-  pr' = MkParser pr.initSeed pr.parseStep $ curry succeed
+  pr' = MkParser pr.initSeed (map @{Compose} (mapError Right) .: pr.parseStep) $ curry $ succeed {e=Either e e'}
 
-  parseAll' : Swirl m e r o -> Swirl m e (pr.SeedTy, r) o'
+  parseAll' : Swirl m (Either e e') r o -> Swirl m (Either e e') (pr.SeedTy, r) o'
   parseAll' sw = (parseOnce pr' sw >>= \case
                    Done x => Done x
                    nextSw => parseAll' $ assert_smaller sw $ mapFst snd nextSw
