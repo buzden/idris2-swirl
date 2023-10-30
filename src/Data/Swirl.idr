@@ -618,14 +618,39 @@ bracketO init cleanup = bimap fst snd $ emitRes' id $ bracket' init cleanup succ
 -- TODO to think of a folding function that rejects getting the current element, i.e. stops folding with no consumption
 -- TODO to think of a mechanism, allowing the common state between successive mini-folds
 -- TODO to add a documantation example, say, by a swirl of chars produce a swirl of strings separated by EOL
-parseOnce : (suddenFin : oi -> r -> Swirl m e r' o') ->
-            (foldOrStop : o -> oi -> Either oi $ Swirl m e () o') ->
-            (init : oi) ->
+
+public export
+data WhetherConsumeLast a = ConsumeLast a | DoNotConsumeLast a
+
+public export
+Functor WhetherConsumeLast where
+  map f $ ConsumeLast x      = ConsumeLast $ f x
+  map f $ DoNotConsumeLast x = DoNotConsumeLast $ f x
+
+public export
+record Parser m e r r' o o' where
+  constructor MkParser
+  0 SeedTy  : Type
+  initSeed  : SeedTy
+  parseStep : o -> SeedTy -> Either SeedTy $ WhetherConsumeLast $ Swirl m e () o'
+  manageFin : SeedTy -> r -> Swirl m e r' o'
+
+%name Parser pr, ps
+
+export
+Functor m => Functor (Parser m e r r' o) where
+  map f $ MkParser ty is ps mf = MkParser ty is (map @{Compose} (mapSnd f) .: ps) (mapSnd f .: mf)
+
+export
+parseOnce : (0 _ : IfUnsolved r' ()) =>
+            (0 _ : IfUnsolved o' Void) =>
+            Parser m e r r' o o' ->
             Swirl m e r o -> Swirl m e (Swirl m e r' o) o'
 
-parseAll : (manageFin : oi -> r -> Swirl m e r' o') ->
-           (foldOrStop : o -> oi -> Either oi $ Swirl m e () o') ->
-           (eachInit : oi) ->
+export
+parseAll : (0 _ : IfUnsolved r' ()) =>
+           (0 _ : IfUnsolved o' Void) =>
+           Parser m e r r' o o' ->
            Swirl m e r o -> Swirl m e r' o'
 
 --- Processes ---
