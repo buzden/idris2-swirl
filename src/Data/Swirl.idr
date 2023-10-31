@@ -695,7 +695,9 @@ parseOnce pr = mapError (mapFst snd) . go pr pr.initSeed where
                                ) `BindR` \case
                                  Left (s', r) => mapFst Left $ mapError Right $ pr.manageFin s' r
                                  Right cont   => succeed $ Right $ either (`BindE` h) id cont
-  go pr s $ Ensure l x     = ?parseOnce_rhs_6
+  go pr s $ Ensure l x     = Ensure l (go pr.passFin s x) `BindR` \case
+                               (rf, Left (s', r)) => mapError Right $ mapFst Left $ pr.manageFin s' (rf, r)
+                               (rf, Right cont)   => succeed $ Right $ mapFst (rf,) cont
 
 export
 parseAll : Functor m =>
