@@ -668,23 +668,20 @@ Functor m => Functor (Parser m st e' r r' o) where
 (.passFin) : Parser m st e' r'' r' o o' -> Parser m st e' r (st, r) o o'
 (.passFin) = {manageFin := curry succeed}
 
-%inline
-(.seedToErr) : Parser m st e' r r' o o' -> Parser m st (st, e') r r' o o'
-
 export
 parseOnce : Functor m =>
             (0 _ : IfUnsolved r' ()) =>
             (0 _ : IfUnsolved o' Void) =>
             Parser m st e'' r r' o o' ->
             Swirl m e r o -> Swirl m (Either e e'') (Either r' $ Swirl m e r o) o'
-parseOnce pr = go pr pr.initSeed where
+parseOnce pr = mapError (mapFst snd) . go pr pr.initSeed where
   go : forall st, e, e'', r, r', o, o'.
        Parser m st e'' r r' o o' ->
        st ->
        Swirl m e r o ->
-       Swirl m (Either e e'') (Either r' $ Swirl m e r o) o'
+       Swirl m (Either (st, e) e'') (Either r' $ Swirl m e r o) o'
   go pr s $ Done x         = mapError Right $ mapFst Left $ pr.manageFin s x
-  go pr s $ Fail e         = Fail $ Left e
+  go pr s $ Fail e         = fail $ Left (s, e)
   go pr s sw'@(Yield x sw) = case pr.parseStep x s of
                                Left s'   => go pr s' sw
                                Right sub => mapFst (const $ Right $ ifConsumes sub sw sw') $ mapError Right sub.val
@@ -692,12 +689,12 @@ parseOnce pr = go pr pr.initSeed where
   go pr s $ BindR sw g     = go pr.passFin s sw `bindR` \case
                                Left (s', ir) => go pr s' $ g ir
                                Right cont    => succeed $ Right $ cont `bindR` g
-  go pr s $ BindE sw h     = BindE (go pr.seedToErr.passFin s sw) (\case
-                                 Left ei => ?foo $ h ei
-                                 Right (s', ep) => ?parseOnce_rhs_8
-                               ) `bindR` \case
+  go pr s $ BindE sw h     = BindE (mapFst (map Left) $ go pr.passFin s sw) (\case
+                                 Left (s', ei) => mapFst (map Right) $ go pr.passFin s' $ h ei
+                                 Right ep      => fail $ Right ep
+                               ) `BindR` \case
                                  Left (s', r) => mapFst Left $ mapError Right $ pr.manageFin s' r
-                                 Right cont   => succeed $ Right $ BindE cont h
+                                 Right cont   => succeed $ Right $ either (`BindE` h) id cont
   go pr s $ Ensure l x     = ?parseOnce_rhs_6
 
 export
