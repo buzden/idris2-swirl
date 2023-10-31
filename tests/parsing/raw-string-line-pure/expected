@@ -1,0 +1,6 @@
+[ a line ] A multi-line text
+[ a line ] =================
+[ a line ] 
+[ a line ] This is a multi-line text.
+[ a line ] It has a markdown-like header
+[ a line ] and several lines afterwards

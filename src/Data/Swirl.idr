@@ -137,6 +137,19 @@ andThen sw sv = BindR sw $ const sv
 
 infixl 1 `andThen` -- as `>>`
 
+--- Basic analysis ---
+
+||| Checks is the only thing left for the given swirl is just to succeed, without any additional actions
+|||
+||| Returns the same swirl (with possibly changed parameters) is yes, and `Nothing` if no.
+export
+hasSucceeded : (0 _ : IfUnsolved m' m) =>
+               (0 _ : IfUnsolved e' Void) =>
+               (0 _ : IfUnsolved o' Void) =>
+               Swirl m e r o -> Maybe $ Swirl m' e' r o'
+hasSucceeded $ Done x = Just $ Done x
+hasSucceeded _        = Nothing
+
 --- Forgetting ---
 
 export
