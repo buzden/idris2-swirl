@@ -651,51 +651,36 @@ Functor WhetherConsumeLast where
   map f $ DoNotConsumeLast x = DoNotConsumeLast $ f x
 
 public export
-record Parser m e' r r' o o' where
+record Parser m st e' r r' o o' where
   [search o' o]
   constructor MkParser
-  {0 SeedTy : Type}
-  initSeed  : SeedTy
-  parseStep : o -> SeedTy -> Either SeedTy $ WhetherConsumeLast $ Swirl m e' () o'
-  manageFin : SeedTy -> r -> Swirl m e' r' o'
+  initSeed  : st
+  parseStep : o -> st -> Either st $ WhetherConsumeLast $ Swirl m e' () o'
+  manageFin : st -> r -> Swirl m e' r' o'
 
 %name Parser pr, ps
 
 export
-Functor m => Functor (Parser m e' r r' o) where
-  map f $ MkParser is ps mf = MkParser is (map @{Compose} (mapSnd f) .: ps) (mapSnd f .: mf)
+Functor m => Functor (Parser m st e' r r' o) where
+  map f = {parseStep $= (map @{Compose} (mapSnd f) .:), manageFin $= (mapSnd f .:)}
 
 %inline
-(.passFin) : (pr : Parser m e' r'' r' o o') -> Parser m e' r (pr.SeedTy, r) o o'
+(.passFin) : Parser m st e' r'' r' o o' -> Parser m st e' r (st, r) o o'
 (.passFin) = {manageFin := curry succeed}
 
 %inline
-(.passSeed) : {0 pr : Parser m e' r r' o o'} -> pr.SeedTy -> pr.passFin.SeedTy
-(.passSeed) {pr = MkParser {}} x = x
-
-%inline
-(.unPassSeed) : {0 pr : Parser m e' r r' o o'} -> pr.passFin.SeedTy -> pr.SeedTy
-(.unPassSeed) {pr = MkParser {}} x = x
-
-%inline
-(.seedToErr) : (pr : Parser m e' r r' o o') -> Parser m (pr.SeedTy, e') r r' o o'
-
-%inline
-(.errSeed) : {0 pr : Parser m e' r r' o o'} -> pr.SeedTy -> pr.seedToErr.SeedTy
-
-%inline
-(.unErrSeed) : {0 pr : Parser m e' r r' o o'} -> pr.seedToErr.SeedTy -> pr.SeedTy
+(.seedToErr) : Parser m st e' r r' o o' -> Parser m st (st, e') r r' o o'
 
 export
 parseOnce : Functor m =>
             (0 _ : IfUnsolved r' ()) =>
             (0 _ : IfUnsolved o' Void) =>
-            Parser m e'' r r' o o' ->
+            Parser m st e'' r r' o o' ->
             Swirl m e r o -> Swirl m (Either e e'') (Either r' $ Swirl m e r o) o'
 parseOnce pr = go pr pr.initSeed where
-  go : forall e, e'', r, r', o, o'.
-       (pr : Parser m e'' r r' o o') ->
-       pr.SeedTy ->
+  go : forall st, e, e'', r, r', o, o'.
+       Parser m st e'' r r' o o' ->
+       st ->
        Swirl m e r o ->
        Swirl m (Either e e'') (Either r' $ Swirl m e r o) o'
   go pr s $ Done x         = mapError Right $ mapFst Left $ pr.manageFin s x
@@ -704,14 +689,14 @@ parseOnce pr = go pr pr.initSeed where
                                Left s'   => go pr s' sw
                                Right sub => mapFst (const $ Right $ ifConsumes sub sw sw') $ mapError Right sub.val
   go pr s $ Effect msw     = Effect $ msw <&> assert_total go pr s
-  go pr s $ BindR sw g     = go pr.passFin s.passSeed sw `bindR` \case
+  go pr s $ BindR sw g     = go pr.passFin s sw `bindR` \case
                                Left (s', ir) => go pr s' $ g ir
                                Right cont    => succeed $ Right $ cont `bindR` g
-  go pr s $ BindE sw h     = BindE (go pr.seedToErr.passFin s.errSeed.passSeed sw) (\case
+  go pr s $ BindE sw h     = BindE (go pr.seedToErr.passFin s sw) (\case
                                  Left ei => ?foo $ h ei
                                  Right (s', ep) => ?parseOnce_rhs_8
                                ) `bindR` \case
-                                 Left (s', r) => mapFst Left $ mapError Right $ pr.manageFin s'.unErrSeed r
+                                 Left (s', r) => mapFst Left $ mapError Right $ pr.manageFin s' r
                                  Right cont   => succeed $ Right $ BindE cont h
   go pr s $ Ensure l x     = ?parseOnce_rhs_6
 
@@ -719,10 +704,10 @@ export
 parseAll : Functor m =>
            (0 _ : IfUnsolved r' ()) =>
            (0 _ : IfUnsolved o' Void) =>
-           Parser m e' r r' o o' ->
+           Parser m st e' r r' o o' ->
            Swirl m e r o -> Swirl m (Either e e') r' o'
 parseAll pr sw = (parseAll' sw >>= mapError Right . uncurry pr.manageFin) @{ByResult} where
-  parseAll' : Swirl m e r o -> Swirl m (Either e e') (pr.SeedTy, r) o'
+  parseAll' : Swirl m e r o -> Swirl m (Either e e') (st, r) o'
   parseAll' sw = parseOnce pr.passFin sw `bindR` \case
                    Left x     => succeed x
                    Right cont => parseAll' $ assert_smaller sw cont
