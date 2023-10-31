@@ -26,33 +26,36 @@ Functor WhetherConsumeLast where
   map f $ ConsumeLast x      = ConsumeLast $ f x
   map f $ DoNotConsumeLast x = DoNotConsumeLast $ f x
 
+--- Raw parser (will lots of stuff exposed in the type) ---
+
 public export
-record Parser m st e' r r' o o' where
-  [search o' o]
-  constructor MkParser
+record RawParser m st e' r r' o o' where
+  constructor RP
   initSeed  : st
   parseStep : o -> st -> Either st $ WhetherConsumeLast $ Swirl m e' () o'
   manageFin : st -> r -> Swirl m e' r' o'
 
-%name Parser pr, ps
+%name RawParser pr, ps
 
 export
-Functor m => Functor (Parser m st e' r r' o) where
+Functor m => Functor (RawParser m st e' r r' o) where
   map f = {parseStep $= (map @{Compose} (mapSnd f) .:), manageFin $= (mapSnd f .:)}
 
+--- Parsing of swirls with the raw parser ---
+
 %inline
-(.passFin) : Parser m st e' r'' r' o o' -> Parser m st e' r (st, r) o o'
+(.passFin) : RawParser m st e' r'' r' o o' -> RawParser m st e' r (st, r) o o'
 (.passFin) = {manageFin := curry succeed}
 
 export
-parseOnce : Functor m =>
-            (0 _ : IfUnsolved r' ()) =>
-            (0 _ : IfUnsolved o' Void) =>
-            Parser m st e'' r r' o o' ->
-            Swirl m e r o -> Swirl m (Either e e'') (Either r' $ Swirl m e r o) o'
-parseOnce pr = mapError (mapFst snd) . go pr pr.initSeed where
+rawParseOnce : Functor m =>
+               (0 _ : IfUnsolved r' ()) =>
+               (0 _ : IfUnsolved o' Void) =>
+               RawParser m st e'' r r' o o' ->
+               Swirl m e r o -> Swirl m (Either e e'') (Either r' $ Swirl m e r o) o'
+rawParseOnce pr = mapError (mapFst snd) . go pr pr.initSeed where
   go : forall st, e, e'', r, r', o, o'.
-       Parser m st e'' r r' o o' ->
+       RawParser m st e'' r r' o o' ->
        st ->
        Swirl m e r o ->
        Swirl m (Either (st, e) e'') (Either r' $ Swirl m e r o) o'
@@ -76,13 +79,13 @@ parseOnce pr = mapError (mapFst snd) . go pr pr.initSeed where
                                (rf, Right cont)   => succeed $ Right $ mapFst (rf,) cont
 
 export
-parseAll : Functor m =>
-           (0 _ : IfUnsolved r' ()) =>
-           (0 _ : IfUnsolved o' Void) =>
-           Parser m st e' r r' o o' ->
-           Swirl m e r o -> Swirl m (Either e e') r' o'
-parseAll pr sw = (parseAll' sw >>= mapError Right . uncurry pr.manageFin) @{ByResult} where
-  parseAll' : Swirl m e r o -> Swirl m (Either e e') (st, r) o'
-  parseAll' sw = parseOnce pr.passFin sw `bindR` \case
+rawParseAll : Functor m =>
+              (0 _ : IfUnsolved r' ()) =>
+              (0 _ : IfUnsolved o' Void) =>
+              RawParser m st e' r r' o o' ->
+              Swirl m e r o -> Swirl m (Either e e') r' o'
+rawParseAll pr sw = (rawParseAll' sw >>= mapError Right . uncurry pr.manageFin) @{ByResult} where
+  rawParseAll' : Swirl m e r o -> Swirl m (Either e e') (st, r) o'
+  rawParseAll' sw = rawParseOnce pr.passFin sw `bindR` \case
                    Left x     => succeed x
-                   Right cont => parseAll' $ assert_smaller sw cont
+                   Right cont => rawParseAll' $ assert_smaller sw cont
