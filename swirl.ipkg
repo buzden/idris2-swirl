@@ -16,4 +16,5 @@ depends = if-unsolved-implicit
 modules = Data.Swirl
         , Data.Swirl.Console
         , Data.Swirl.File
+        , Data.Swirl.Parsing
         , Data.Swirl.System
