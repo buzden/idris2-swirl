@@ -89,3 +89,13 @@ rawParseAll pr sw = (rawParseAll' sw >>= mapError Right . uncurry pr.manageFin) 
   rawParseAll' sw = rawParseOnce pr.passFin sw `bindR` \case
                    Left x     => succeed x
                    Right cont => rawParseAll' $ assert_smaller sw cont
+
+-- TODO to add composable parsers. They should contain much lesser type parameters (say, `st`, `e'` and `r'` from `RawParser` shoudn't be exposed)
+-- and be able to be composed, say, with `>>` and `>>=` combinators.
+-- This can be done in several ways, at least:
+--
+-- - changing signatures of functions inside `RawParser`, say, replacing `st` to `Swirl m e' st Void` in the result of `parseStep`
+--   to allow the rest to fail, and thus to continue parsing; or
+--
+-- - making `Parser` to contain binds as constructors and to have `parseOnce` taking `Parser` and performing sequential parsing with raw-subparsers
+--   in an "external" way comparing to a `RawParser`'s abilities.
