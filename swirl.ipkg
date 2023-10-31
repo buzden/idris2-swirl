@@ -17,4 +17,5 @@ modules = Data.Swirl
         , Data.Swirl.Console
         , Data.Swirl.File
         , Data.Swirl.Parsing
+        , Data.Swirl.Parsing.String
         , Data.Swirl.System

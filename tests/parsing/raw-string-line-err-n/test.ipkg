@@ -1,0 +1,6 @@
+package a-test
+
+executable = "a-test"
+
+depends = swirl
+main = Main
