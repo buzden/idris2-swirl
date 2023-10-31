@@ -635,6 +635,16 @@ bracketO init cleanup = bimap fst snd $ emitRes' id $ bracket' init cleanup succ
 public export
 data WhetherConsumeLast a = ConsumeLast a | DoNotConsumeLast a
 
+export
+(.val) : WhetherConsumeLast a -> a
+(.val) $ ConsumeLast x      = x
+(.val) $ DoNotConsumeLast x = x
+
+export
+ifConsumes : WhetherConsumeLast a -> (cons, notCons : Lazy b) -> b
+ifConsumes (ConsumeLast _     ) cons notCons = cons
+ifConsumes (DoNotConsumeLast _) cons notCons = notCons
+
 public export
 Functor WhetherConsumeLast where
   map f $ ConsumeLast x      = ConsumeLast $ f x
@@ -655,11 +665,55 @@ export
 Functor m => Functor (Parser m e' r r' o) where
   map f $ MkParser is ps mf = MkParser is (map @{Compose} (mapSnd f) .: ps) (mapSnd f .: mf)
 
+%inline
+(.passFin) : (pr : Parser m e' r'' r' o o') -> Parser m e' r (pr.SeedTy, r) o o'
+(.passFin) = {manageFin := curry succeed}
+
+%inline
+(.passSeed) : {0 pr : Parser m e' r r' o o'} -> pr.SeedTy -> pr.passFin.SeedTy
+(.passSeed) {pr = MkParser {}} x = x
+
+%inline
+(.unPassSeed) : {0 pr : Parser m e' r r' o o'} -> pr.passFin.SeedTy -> pr.SeedTy
+(.unPassSeed) {pr = MkParser {}} x = x
+
+%inline
+(.seedToErr) : (pr : Parser m e' r r' o o') -> Parser m (pr.SeedTy, e') r r' o o'
+
+%inline
+(.errSeed) : {0 pr : Parser m e' r r' o o'} -> pr.SeedTy -> pr.seedToErr.SeedTy
+
+%inline
+(.unErrSeed) : {0 pr : Parser m e' r r' o o'} -> pr.seedToErr.SeedTy -> pr.SeedTy
+
 export
-parseOnce : (0 _ : IfUnsolved r' ()) =>
+parseOnce : Functor m =>
+            (0 _ : IfUnsolved r' ()) =>
             (0 _ : IfUnsolved o' Void) =>
-            Parser m e' r r' o o' ->
-            Swirl m e r o -> Swirl m (Either e e') (Either r' $ Swirl m e r o) o'
+            Parser m e'' r r' o o' ->
+            Swirl m e r o -> Swirl m (Either e e'') (Either r' $ Swirl m e r o) o'
+parseOnce pr = go pr pr.initSeed where
+  go : forall e, e'', r, r', o, o'.
+       (pr : Parser m e'' r r' o o') ->
+       pr.SeedTy ->
+       Swirl m e r o ->
+       Swirl m (Either e e'') (Either r' $ Swirl m e r o) o'
+  go pr s $ Done x         = mapError Right $ mapFst Left $ pr.manageFin s x
+  go pr s $ Fail e         = Fail $ Left e
+  go pr s sw'@(Yield x sw) = case pr.parseStep x s of
+                               Left s'   => go pr s' sw
+                               Right sub => mapFst (const $ Right $ ifConsumes sub sw sw') $ mapError Right sub.val
+  go pr s $ Effect msw     = Effect $ msw <&> assert_total go pr s
+  go pr s $ BindR sw g     = go pr.passFin s.passSeed sw `bindR` \case
+                               Left (s', ir) => go pr s' $ g ir
+                               Right cont    => succeed $ Right $ cont `bindR` g
+  go pr s $ BindE sw h     = BindE (go pr.seedToErr.passFin s.errSeed.passSeed sw) (\case
+                                 Left ei => ?foo $ h ei
+                                 Right (s', ep) => ?parseOnce_rhs_8
+                               ) `bindR` \case
+                                 Left (s', r) => mapFst Left $ mapError Right $ pr.manageFin s'.unErrSeed r
+                                 Right cont   => succeed $ Right $ BindE cont h
+  go pr s $ Ensure l x     = ?parseOnce_rhs_6
 
 export
 parseAll : Functor m =>
@@ -668,14 +722,10 @@ parseAll : Functor m =>
            Parser m e' r r' o o' ->
            Swirl m e r o -> Swirl m (Either e e') r' o'
 parseAll pr sw = (parseAll' sw >>= mapError Right . uncurry pr.manageFin) @{ByResult} where
-  pr' : Parser m e' r (pr.SeedTy, r) o o'
-  pr' = {manageFin := curry succeed} pr
-
   parseAll' : Swirl m e r o -> Swirl m (Either e e') (pr.SeedTy, r) o'
-  parseAll' sw = (parseOnce pr' sw >>= \case
-                   Left x       => Done x
-                   Right nextSw => parseAll' $ assert_smaller sw nextSw
-                 ) @{ByResult}
+  parseAll' sw = parseOnce pr.passFin sw `bindR` \case
+                   Left x     => succeed x
+                   Right cont => parseAll' $ assert_smaller sw cont
 
 --- Processes ---
 
