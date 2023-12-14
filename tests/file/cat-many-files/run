@@ -1,0 +1,14 @@
+rm -rf build
+
+FILES="$(pack package-path | tr ':' '\n' | while read r; do find "$r" -type f -name '*.idr'; done | sed '/ /d')"
+
+flock "$1" pack -q install-deps test.ipkg && \
+pack run test.ipkg $FILES > to-swirl && \
+cat $FILES > to-cat
+
+# TODO to think maybe create `to-*` files in a temp file system
+
+if diff to-cat to-swirl >/dev/null; then echo "Ok"; else echo "Differ"; fi
+
+rm -rf to-cat to-swirl
+rm -rf build
