@@ -1,0 +1,17 @@
+rm -rf build
+
+cat /dev/random 2>/dev/null | tr -dc [:alnum:][:space:] 2>/dev/null | head -c 1M > file-3
+
+FILES="file-*"
+
+flock "$1" pack -q install-deps test.ipkg && \
+pack run test.ipkg $FILES > to-swirl && \
+cat $FILES > to-cat
+
+# TODO to think maybe create `to-*` files in a temp file system
+
+if diff to-cat to-swirl >/dev/null; then echo "Ok"; else echo "Differ"; fi
+
+rm -rf to-cat to-swirl
+rm -rf file-3
+rm -rf build
