@@ -11,7 +11,6 @@ builddir = ".build"
 
 depends = if-unsolved-implicit
         , tailrec
-        , contrib
 
 modules = Data.Swirl
         , Data.Swirl.Console
