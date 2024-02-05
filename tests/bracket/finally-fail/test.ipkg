@@ -4,6 +4,6 @@ authors = "Denis Buzdalov"
 
 main = Main
 
-depends = swirl, contrib
+depends = swirl
 
 executable = "test"
