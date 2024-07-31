@@ -1,10 +1,19 @@
 rm -rf build
+rm -rf to-cat to-swirl
 
-FILES="$(pack package-path | tr ':' '\n' | while read r; do find "$r" -type f -name '*.idr'; done | sed '/ /d')"
+die() {
+  echo "failed after $1"
+  test -r to-swirl && (echo "beginning of 'to-swirl':"; head -n 10 to-swirl)
+  test -r to-cat && (echo "beginning of 'to-cat':"; head -n 10 to-cat)
+  exit "$1"
+}
 
-flock "$1" pack -q install-deps test.ipkg && \
-pack run test.ipkg $FILES > to-swirl && \
-cat $FILES > to-cat
+flock "$1" pack -q install-deps test.ipkg || die 1
+
+FILES="$(pack package-path | tr ':' '\n' | while read -r r; do find "$r" -type f -name '*.idr'; done | sed '/ /d')" || die 2
+
+pack run test.ipkg $FILES > to-swirl || die 3
+cat $FILES > to-cat || die 4
 
 # TODO to think maybe create `to-*` files in a temp file system
 
