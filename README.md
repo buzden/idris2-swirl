@@ -19,27 +19,27 @@ A library for streams of monadic actions
 
 ## Table of contents
 
-* [Terminology](#what-is-swirl-anyway)
-* [Type alignments](#type-alignments)
-* Polymorphism in API design
-  * [When API is more polymorphic than could](#defaulting-throughout-the-api)
-  * [Getting rid of "unsolved type"](#solving-the-unsolved-type-problem)
-  * [Interactive editing and typed holes](#defaulting-and-typed-holes)
-* [Running](#running)
-  * [On stack safety](#stack-safety)
-* [Creation](#basic-creation)
-  * [Emitting output](#emitting-output-values)
-  * [Succeeding and failing](#finishing-the-swirl)
-  * [Conditional failure](#conditional-failure)
-  * [All that with effects](#effectful-emitting-and-finishing)
-* [Composition](#combinations)
-* [Foldings](#foldings)
-* [Error handling](#error-handling-and-bracket-pattern)
-  * [Throwing and catching](#throwing-and-catching)
-  * [Bracket pattern](#ensuring-resource-releasing)
-* [On design](#design)
-  * [On API](#design-of-api)
-  * [Internal structure](#global-questions)
+- [Terminology](#what-is-swirl-anyway)
+- [Type alignments](#type-alignments)
+- Polymorphism in API design
+  - [When API is more polymorphic than could](#defaulting-throughout-the-api)
+  - [Getting rid of "unsolved type"](#solving-the-unsolved-type-problem)
+  - [Interactive editing and typed holes](#defaulting-and-typed-holes)
+- [Running](#running)
+  - [On stack safety](#stack-safety)
+- [Creation](#basic-creation)
+  - [Emitting output](#emitting-output-values)
+  - [Succeeding and failing](#finishing-the-swirl)
+  - [Conditional failure](#conditional-failure)
+  - [All that with effects](#effectful-emitting-and-finishing)
+- [Composition](#combinations)
+- [Foldings](#foldings)
+- [Error handling](#error-handling-and-bracket-pattern)
+  - [Throwing and catching](#throwing-and-catching)
+  - [Bracket pattern](#ensuring-resource-releasing)
+- [On design](#design)
+  - [On API](#design-of-api)
+  - [Internal structure](#global-questions)
 
 ## What is swirl anyway?
 
@@ -210,7 +210,7 @@ combination = consumer . producer
 Notice that these "default" types pop out in the context of typed holes.
 This may surprise a little bit during interactive development.
 
-Say, you, for some reason, attempted to you map the result with a function *after* you applied `forgetR` in them
+Say, you, for some reason, attempted to you map the result with a function _after_ you applied `forgetR` in them
 (you can see more about such combinations in a [special section](#combinations)).
 
 <!-- idris
@@ -227,7 +227,7 @@ mapped = mapFst ?mapping_function $ forgetR someSwirl
 -->
 
 If you ask the compiler about the type of the `mapping_function` typed hole, it says `() -> Nat`,
-since `forgetR` maps the result type to `()` *by default*.
+since `forgetR` maps the result type to `()` _by default_.
 
 But as soon as you try to actually use the result as some other monoid type, say, `List Nat`,
 you can perfectly do it:

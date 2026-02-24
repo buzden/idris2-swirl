@@ -7,15 +7,16 @@ on:
       - main
       - master
     tags:
-      - '**'
+      - "**"
   pull_request:
     branches:
       - main
       - master
   schedule:
-    - cron: '0 1 * * *'
+    - cron: "0 1 * * *"
 
-permissions: read-all
+permissions:
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}@${{ github.ref }}
@@ -63,6 +64,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Update `pack-db`
         run: pack update-db
       - name: Compute the package name and desired pack collection
@@ -76,8 +79,14 @@ jobs:
           { echo; echo "[idris2]"; echo 'commit = "latest:main"'; } >> pack.toml
           pack fetch
       - name: Switch to the ${{ env.pack_collection }} collection
-        run: pack switch ${{ env.pack_collection }}
+        run: pack switch "$PACK_COLLECTION"
+        env:
+          PACK_COLLECTION: ${{ env.pack_collection }}
       - name: Build `${{ env.package_name }}`
-        run: pack build ${{ env.package_name }}
+        run: pack build "$PACKAGE_NAME"
+        env:
+          PACKAGE_NAME: ${{ env.package_name }}
       - name: Test `${{ env.package_name }}`
-        run: pack test ${{ env.package_name }}
+        run: pack test "$PACKAGE_NAME"
+        env:
+          PACKAGE_NAME: ${{ env.package_name }}
