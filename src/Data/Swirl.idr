@@ -53,7 +53,7 @@ Swirlie m e = Swirl m e ()
 --   or the need of failure-ignoring variant of `>>=` to be used for it. Both it possible, but both are counter-intuitive.
 --
 --   By the way, at least at the time of writing this, the Scala's fs2 library has the same problem and generally the `release`
---   process of a braket pattern *can* be interrupted by an exception in the RHS of the `flatMap` if it emits some values.
+--   process of a bracket pattern *can* be interrupted by an exception in the RHS of the `flatMap` if it emits some values.
 --
 -- - `Ensure` constructor, error parameter of "finally" action.
 --
@@ -75,7 +75,7 @@ Swirlie m e = Swirl m e ()
 --
 -- - `Ensure` constructor, its return type.
 --
---   Resulting error type of the contructor could be `(r', e)`, to emphasize that finally section always executes,
+--   Resulting error type of the constructor could be `(r', e)`, to emphasize that finally section always executes,
 --   Thus always returning `r'` in both channels.
 
 --- Basic mapping ---
@@ -417,7 +417,7 @@ squashOuts' = mapFst fst . squashOuts' (const id) ()
 squashOuts : Functor m => Semigroup r => Swirl m e r (Swirl m e r o) -> Swirl m e r o
 squashOuts = mapFst mergeSemi . mapError fromEither . squashOuts' (\a, x => (a <+> Just x) @{Deep}) Nothing
 
--- Unlike the `BindR` constuctor, this function is significantly not lazy on its first argument.
+-- Unlike the `BindR` constructor, this function is significantly not lazy on its first argument.
 export %inline
 bindR : Swirl m e r' o -> (r' -> Swirl m e r o) -> Swirl m e r o
 bindR (Done x) f = f x
@@ -662,7 +662,7 @@ export
 take : Functor m => Nat -> Swirl m e r o -> Swirl m e r o
 take = mapError snd .: mapFst snd .: take'
 
--- Additional bool parameter's semantics is roughtly the last value returned by the condition function
+-- Additional bool parameter's semantics is roughly the last value returned by the condition function
 %inline %tcinline
 twCont : Functor m =>
          Bool ->
@@ -699,7 +699,7 @@ export
 drop : Functor m => Nat -> Swirl m e r o -> Swirl m e r o
 drop = mapError snd .: mapFst snd .: drop'
 
--- Additional bool parameter's semantics is roughtly the last value returned by the condition function
+-- Additional bool parameter's semantics is roughly the last value returned by the condition function
 %inline %tcinline
 dwCont : Functor m =>
          Bool ->

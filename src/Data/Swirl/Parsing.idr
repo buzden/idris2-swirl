@@ -6,7 +6,7 @@ import public Data.Swirl
 
 --- Parsing ---
 
--- TODO to add a documantation example, say, by a swirl of chars produce a swirl of strings separated by EOL
+-- TODO to add a documentation example, say, by a swirl of chars produce a swirl of strings separated by EOL
 
 public export
 data WhetherConsumeLast a = ConsumeLast a | DoNotConsumeLast a
@@ -90,7 +90,7 @@ rawParseAll pr sw = (rawParseAll' sw >>= mapError Right . uncurry pr.manageFin) 
                    Left x     => succeed x
                    Right cont => rawParseAll' $ assert_smaller sw cont
 
--- TODO to add composable parsers. They should contain much lesser type parameters (say, `st`, `e'` and `r'` from `RawParser` shoudn't be exposed)
+-- TODO to add composable parsers. They should contain much lesser type parameters (say, `st`, `e'` and `r'` from `RawParser` shouldn't be exposed)
 -- and be able to be composed, say, with `>>` and `>>=` combinators.
 -- This can be done in several ways, at least:
 --
